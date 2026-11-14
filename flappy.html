@@ -70,7 +70,7 @@ try {
 STATS.bestScore = Math.max(STATS.bestScore, best);
 const saveStats = () => { try { localStorage.setItem("flappy_stats", JSON.stringify(STATS)); } catch (e) {} };
 
-// ---------- sound ----------
+// ---------- sound ---------- //
 let audio = null, muted = false;
 function beep(freq, dur, type = "square", vol = 0.06, slide = 0, delay = 0) {
   if (muted) return;
