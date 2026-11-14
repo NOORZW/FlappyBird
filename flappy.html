@@ -1,0 +1,616 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Flappy</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #141e27; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  canvas { max-height: 100vh; max-width: 100vw; aspect-ratio: 480 / 640; touch-action: none; image-rendering: pixelated; image-rendering: crisp-edges; box-shadow: 0 8px 50px #000a; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+/* =====================================================================
+   FLAPPY — pixel edition
+   Controls: Space / Up / W / click / tap = flap · P pause · R restart · M mute · 1-4 pick bird
+
+   ADD-ON API  (load a separate file, e.g. achievements.js, AFTER this script; see bottom of page)
+   ---------------------------------------------------------------------
+   window.Flappy.on(event, fn)      events: "ready" "start" "flap" "pipe" "coin" "score" "death"
+                                            "skin" "phase" "pause" "resume" "tick"
+                                    fn(data, Flappy). data examples:
+                                      pipe/coin/score: { score, source:"pipe"|"coin", run }
+                                      death:           { score, best, newBest, cause:"pipe"|"ground", run }
+                                      skin:            { index, name }      phase: { phase, name }
+                                      tick:            { dt }  (every frame while playing)
+   Flappy.off(event, fn)
+   Flappy.get()                     snapshot { mode, score, best, skin, phase, run:{flaps,coins,pipes,time}, stats }
+   Flappy.stats                     lifetime stats (auto-saved): runs flaps pipes coins deaths totalScore bestScore playTime
+   Flappy.store.get(key, default) / .set(key, value)   namespaced localStorage for add-ons (JSON)
+   Flappy.toast({ title, text, icon, ms })   pixel pop-up banner. icon = canvas from Flappy.px.spr(...)
+   Flappy.addButton({ id, draw(api,x,y), onClick })   44x44 button on title / game-over screens (top-left)
+   Flappy.setOverlay({ draw(api), pointer(x,y,type), key(event) } | null)   full-screen panel; freezes the game
+   Flappy.lockSkin(i, "how to unlock") / Flappy.unlockSkin(i)               gate bird skins (0-3)
+   Flappy.beep(freq, dur, type, vol, slide, delay)   sound
+   Flappy.px = { spr(rows,pal), text, rect, panel, icon, snap, W, H }       pixel drawing helpers (logic coords 480x640)
+   Flappy.SKINS, Flappy.PHASES
+   ===================================================================== */
+
+const W = 480, H = 640, GROUND = 90, PLAY_H = H - GROUND;
+const GAP = 165, PIPE_W = 72, SPACING = 235, CAP_H = 28, CAP_X = 4;
+const BASE_SPEED = 170, GRAVITY = 1500, FLAP = -440, MAX_FALL = 650;
+const BIRD_X = 120, HIT_R = 11;
+
+// Everything is drawn into a tiny 240x320 canvas (1 art pixel = 2 logic px) and scaled up with no smoothing.
+const cv = document.getElementById("c"), dctx = cv.getContext("2d");
+const dpr = Math.min(Math.max(1, Math.round(window.devicePixelRatio || 1)), 2);
+cv.width = W * dpr; cv.height = H * dpr;
+const lo = document.createElement("canvas"); lo.width = W / 2; lo.height = H / 2;
+const ctx = lo.getContext("2d");
+ctx.imageSmoothingEnabled = false; dctx.imageSmoothingEnabled = false;
+ctx.scale(0.5, 0.5);
+
+const snap = v => Math.round(v / 2) * 2;
+function R(x, y, w, h, col) {                       // snapped rect, logic coords
+  const x0 = snap(x), y0 = snap(y), x1 = snap(x + w), y1 = snap(y + h);
+  ctx.fillStyle = col; ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
+}
+const lerp = (a, b, k) => a + (b - a) * k;
+const rgb = a => `rgb(${a[0] | 0},${a[1] | 0},${a[2] | 0})`;
+
+// ---------- persistence ----------
+let best = 0, skinIdx = 0;
+const STATS = { runs: 0, flaps: 0, pipes: 0, coins: 0, deaths: 0, totalScore: 0, bestScore: 0, playTime: 0 };
+try {
+  best = +localStorage.getItem("flappy_best") || 0; skinIdx = (+localStorage.getItem("flappy_skin") || 0) % 4;
+  Object.assign(STATS, JSON.parse(localStorage.getItem("flappy_stats") || "{}"));
+} catch (e) {}
+STATS.bestScore = Math.max(STATS.bestScore, best);
+const saveStats = () => { try { localStorage.setItem("flappy_stats", JSON.stringify(STATS)); } catch (e) {} };
+
+// ---------- sound ----------
+let audio = null, muted = false;
+function beep(freq, dur, type = "square", vol = 0.06, slide = 0, delay = 0) {
+  if (muted) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime + delay;
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(40, freq + slide), t + dur);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    o.connect(g); g.connect(audio.destination); o.start(t); o.stop(t + dur);
+  } catch (e) {}
+}
+
+// ---------- pixel sprite helpers (art-pixel canvases) ----------
+function spr(rows, pal) {
+  const w = Math.max(...rows.map(r => r.length)), h = rows.length;
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const g = c.getContext("2d");
+  rows.forEach((r, y) => { for (let x = 0; x < r.length; x++) { const col = pal[r[x]]; if (col) { g.fillStyle = col; g.fillRect(x, y, 1, 1); } } });
+  return c;
+}
+function pxc(w, h, fn) { const c = document.createElement("canvas"); c.width = w; c.height = h; fn(c.getContext("2d"), w, h); return c; }
+const dot = (g, x, y, col) => { g.fillStyle = col; g.fillRect(x, y, 1, 1); };
+function disk(g, cx, cy, r, col) {
+  g.fillStyle = col;
+  for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) if (x * x + y * y <= r * r + r * 0.6) g.fillRect(cx + x, cy + y, 1, 1);
+}
+const S = (sp, x, y, a = 1) => { if (a !== 1) ctx.globalAlpha = a; ctx.drawImage(sp, snap(x), snap(y), sp.width * 2, sp.height * 2); if (a !== 1) ctx.globalAlpha = 1; };
+
+// ---------- bitmap font (3x5) ----------
+const FONT = {
+  A: "010101111101101", B: "110101110101110", C: "011100100100011", D: "110101101101110", E: "111100110100111", F: "111100110100100",
+  G: "011100101101011", H: "101101111101101", I: "111010010010111", J: "001001001101010", K: "101101110101101", L: "100100100100111",
+  M: "101111111101101", N: "111101101101101", O: "010101101101010", P: "110101110100100", Q: "010101101111011", R: "110101110101101",
+  S: "011100010001110", T: "111010010010010", U: "101101101101111", V: "101101101101010", W: "101101111111101", X: "101101010101101",
+  Y: "101101010010010", Z: "111001010100111",
+  0: "111101101101111", 1: "010110010010111", 2: "111001111100111", 3: "111001111001111", 4: "101101111001001",
+  5: "111100111001111", 6: "111100111101111", 7: "111001001001001", 8: "111101111101111", 9: "111101111001111",
+  "!": "010010010000010", ".": "000000000000010", ":": "000010000010000", "+": "000010111010000", "-": "000000111000000",
+  "?": "111001011000010", "/": "001001010100100", "'": "010010000000000",
+};
+const OFFS = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
+function T(str, x, y, sc, col, align = "center", out = null) {   // y = top of text; sc = art px per font px
+  str = String(str).toUpperCase();
+  const u = 2 * sc, cw = 4 * u, wTot = str.length * cw - u;
+  const x0 = snap(align === "center" ? x - wTot / 2 : align === "right" ? x - wTot : x), y0 = snap(y);
+  const draw = (ox, oy, c) => {
+    ctx.fillStyle = c; let px = x0 + ox;
+    for (const ch of str) {
+      const g = FONT[ch];
+      if (g) for (let i = 0; i < 15; i++) if (g[i] === "1") ctx.fillRect(px + (i % 3) * u, y0 + oy + Math.floor(i / 3) * u, u, u);
+      px += cw;
+    }
+  };
+  if (out) for (const [dx, dy] of OFFS) draw(dx * u, dy * u, out);
+  draw(0, 0, col);
+}
+function icon(rows, x, y, u, col, sh = "#2b2b2b") {
+  x = snap(x); y = snap(y);
+  for (const [c, o] of [[sh, 2], [col, 0]]) {
+    ctx.fillStyle = c;
+    rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) if (r[i] === "#") ctx.fillRect(x + i * u + o, y + j * u + o, u, u); });
+  }
+}
+function panel(x, y, w, h, fill = "#f7ecb5", edge = "#5a4a1a", shade = "#e4d68e") {
+  x = snap(x); y = snap(y); w = snap(w); h = snap(h);
+  R(x + 4, y, w - 8, h, edge); R(x, y + 4, w, h - 8, edge);
+  R(x + 8, y + 4, w - 16, h - 8, fill); R(x + 4, y + 8, w - 8, h - 16, fill);
+  R(x + 8, y + h - 12, w - 16, 8, shade); R(x + 4, y + h - 16, w - 8, 8, shade);
+}
+
+// ---------- bird skins + sprites ----------
+const SKINS = [
+  { name: "Sunny", body: "#ffd23f", light: "#fff1a8", belly: "#fff6cf", wing: "#ffb02e", wingD: "#d9780a", crest: "#ff8a65", beak: "#ff7b2e", beakD: "#d4501a" },
+  { name: "Ruby",  body: "#ff5d73", light: "#ffb3be", belly: "#ffe3d6", wing: "#ff8a5c", wingD: "#c43e22", crest: "#ffd23f", beak: "#ffb02e", beakD: "#d9780a" },
+  { name: "Azure", body: "#4cc9f0", light: "#c3f0ff", belly: "#e6fbff", wing: "#3a86ff", wingD: "#2255c4", crest: "#ff7a93", beak: "#ff9e2e", beakD: "#d9780a" },
+  { name: "Mint",  body: "#7be495", light: "#d2ffe0", belly: "#f0fff4", wing: "#2ec4b6", wingD: "#178d80", crest: "#c3a1ff", beak: "#ffb02e", beakD: "#d9780a" },
+];
+const rep = (c, n) => c.repeat(n);
+const BODY = [
+  rep(".", 6) + rep("k", 6),
+  rep(".", 4) + "kk" + rep("l", 4) + "bb" + "kk",
+  rep(".", 2) + "kk" + rep("l", 4) + rep("b", 4) + "k" + "www" + "k",
+  ".k" + rep("l", 4) + rep("b", 6) + "k" + "wwee" + "k",
+  ".k" + "ll" + rep("b", 8) + "k" + "wwee" + "k",
+  ".k" + "ll" + rep("b", 8) + rep("k", 9),
+  ".k" + rep("b", 10) + "cc" + rep("o", 6) + "k",
+  ".k" + rep("b", 12) + rep("O", 6) + "k",
+  ".k" + "yyyy" + rep("b", 8) + rep("k", 7),
+  ".k" + rep("y", 10) + "k",
+  "..k" + rep("y", 8) + "k",
+  "...kk" + "yyyy" + "kk",
+  "....." + rep("k", 4),
+];
+const WINGS = [
+  { at: [2, 3], rows: ["kk.....", "kpk....", "kppkkk.", "kpppppk", ".kqqqk."] },        // up
+  { at: [3, 5], rows: [".kkkk..", "kpppkk.", "kppppqk", ".kqqqk."] },                    // mid
+  { at: [3, 6], rows: [".kkkkk.", "kpppppk", "kppppk.", ".kqqqk.", "..kkk.."] },        // down
+];
+const BIRDS = SKINS.map(p => {
+  const pal = { k: "#2b1a08", l: p.light, b: p.body, y: p.belly, w: "#fff", e: "#1a1a1a", o: p.beak, O: p.beakD, p: p.wing, q: p.wingD, c: p.crest };
+  const body = spr(BODY, pal);
+  return WINGS.map(w => pxc(21, 13, g => { g.drawImage(body, 0, 0); g.drawImage(spr(w.rows, pal), w.at[0], w.at[1]); }));
+});
+
+// ---------- world sprites ----------
+const CLOUDS = [
+  { w: 56, h: 28, base: 24, c: [[10, 18, 8], [22, 12, 11], [36, 14, 10], [47, 19, 7], [30, 20, 9]] },
+  { w: 56, h: 28, base: 24, c: [[9, 19, 7], [20, 14, 9], [33, 10, 11], [46, 16, 9], [28, 20, 8]] },
+  { w: 50, h: 26, base: 22, c: [[8, 17, 6], [18, 13, 8], [30, 16, 9], [41, 19, 6]] },
+].map(d => pxc(d.w, d.h, g => {
+  for (let y = 0; y <= d.base; y++) for (let x = 0; x < d.w; x++)
+    for (const [cx, cy, r] of d.c) if ((x - cx) ** 2 + (y - cy) ** 2 <= r * r) { dot(g, x, y, y > d.base - 5 ? "#c8e0f2" : "#fff"); break; }
+}));
+const SUN = pxc(40, 40, g => {
+  g.fillStyle = "rgba(255,240,150,.35)"; for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) if ((x + y) % 2 === 0 && (x - 20) ** 2 + (y - 20) ** 2 <= 19 * 19) g.fillRect(x, y, 1, 1);
+  disk(g, 20, 20, 12, "#ffd84a"); disk(g, 19, 19, 9, "#ffe97a"); disk(g, 17, 17, 4, "#fff6b8");
+});
+const MOON = pxc(40, 40, g => {
+  g.fillStyle = "rgba(190,210,255,.25)"; for (let y = 0; y < 40; y++) for (let x = 0; x < 40; x++) if ((x + y) % 2 === 0 && (x - 20) ** 2 + (y - 20) ** 2 <= 19 * 19) g.fillRect(x, y, 1, 1);
+  disk(g, 20, 20, 11, "#fffbe0"); g.globalCompositeOperation = "destination-out"; disk(g, 26, 17, 9, "#000");
+});
+const MOUNTAINS = pxc(W / 2, 100, (g, w, h) => {
+  for (let x = 0; x < w; x++) {
+    const t = x / w * Math.PI * 2;
+    const a = Math.round(50 + 20 * Math.sin(t * 2 + 0.6) + 11 * Math.sin(t * 5 + 1.7) + 4 * Math.sin(t * 11));
+    g.fillStyle = "#9ec3e0"; g.fillRect(x, h - a, 1, a);
+    if (a > 66) { g.fillStyle = "#eef6fc"; g.fillRect(x, h - a, 1, Math.min(4, a - 66)); }
+    const b = Math.round(31 + 13 * Math.sin(t * 3 + 2.1) + 7 * Math.sin(t * 7 + 0.4));
+    g.fillStyle = "#b9d6ec"; g.fillRect(x, h - b, 1, b);
+    dot(g, x, h - b, "#d3e6f5");
+  }
+});
+const PINE = spr(["....g....", "...hgg...", "...hgg...", "..hhggg..", "..hhggg..", ".hhhgggg.", ".hhhgggg.", "hhhhggggg", "....t....", "....t...."],
+                 { g: "#2c8248", h: "#3ea35c", t: "#6b4a2a" });
+const HILLS = pxc(W / 2, 65, (g, w, h) => {
+  const hh = x => Math.round(26 + 10 * Math.sin(x / w * Math.PI * 6 + 1) + 6 * Math.sin(x / w * Math.PI * 14));
+  for (let x = 0; x < w; x++) {
+    const a = hh(x);
+    g.fillStyle = "#6fcf7a"; g.fillRect(x, h - a, 1, a);
+    dot(g, x, h - a, "#93e59c");
+    if ((x + a) % 3 === 0) dot(g, x, h - a + 4, "#62c06d");
+  }
+  for (let i = 0; i < 9; i++) { const x = 8 + i * 26 + (i % 3) * 3; g.drawImage(PINE, x, h - hh(x + 4) - 8); }
+});
+const BUSHES = pxc(W / 2, 35, (g, w, h) => {
+  for (let x = 0; x < w; x++) {
+    const t = x / w * Math.PI * 2, a = Math.round(13 + 4 * Math.abs(Math.sin(t * 9)) + 3 * Math.sin(t * 4 + 1));
+    g.fillStyle = "#4fb55d"; g.fillRect(x, h - a, 1, a);
+    dot(g, x, h - a, "#2f8a4c");
+    if (x % 7 === 3) dot(g, x, h - a + 3, "#7bd27f");
+  }
+});
+const GROUND_TILE = pxc(24, GROUND / 2, (g, w, h) => {
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let c;
+    if (y === 0) c = "#4a7a1a";
+    else if (y < 10) c = ((x + y) % 12 < 6) ? "#9ae04e" : "#7cc63a";
+    else if (y === 10) c = "#5c9a22";
+    else if (y === 11) c = "#b8a65f";
+    else c = y > 28 ? "#cdb878" : "#dcc98a";
+    dot(g, x, y, c);
+  }
+  for (const [x, y] of [[4, 16], [15, 20], [9, 27], [20, 33], [3, 38], [13, 41]]) { dot(g, x, y, "#b9a468"); dot(g, x + 1, y, "#b9a468"); }
+});
+const COINS = [6, 4, 1, 4].map(hw => pxc(14, 14, g => {
+  for (let y = -6; y <= 6; y++) for (let x = -hw; x <= hw; x++) {
+    const d = (x / Math.max(hw, 0.7)) ** 2 + (y / 6) ** 2;
+    if (d <= 1.1) dot(g, 7 + x, 7 + y, d > 0.72 ? "#8a5a00" : (x < 0 && y < 0 && hw > 3) ? "#fff3a0" : "#ffd23f");
+  }
+  if (hw > 3) { dot(g, 7, 5, "#c98a0c"); dot(g, 7, 6, "#c98a0c"); dot(g, 7, 8, "#c98a0c"); dot(g, 7, 9, "#c98a0c"); }
+}));
+const MEDALS = [["#e6a46a", "#a8602a"], ["#eef0f4", "#9aa3b0"], ["#ffe066", "#d99a10"], ["#bff3ff", "#4aa8d8"]].map(([hi, lo]) => pxc(24, 30, g => {
+  for (let i = 0; i < 12; i++) { dot(g, 5 + (i >> 1), i, "#e0541e"); dot(g, 6 + (i >> 1), i, "#e0541e"); dot(g, 18 - (i >> 1), i, "#c43e10"); dot(g, 17 - (i >> 1), i, "#c43e10"); }
+  disk(g, 12, 18, 10, "#5a4a1a"); disk(g, 12, 18, 9, lo); disk(g, 11, 17, 7, hi);
+  g.fillStyle = "#fff"; for (const [x, y] of [[12, 14], [11, 15], [12, 15], [13, 15], [9, 16], [10, 16], [11, 16], [12, 16], [13, 16], [14, 16], [15, 16], [10, 17], [11, 17], [12, 17], [13, 17], [14, 17], [11, 18], [12, 18], [13, 18], [10, 19], [11, 19], [13, 19], [14, 19]]) g.fillRect(x, y, 1, 1);
+}));
+const PIPES = [
+  { dark: "#3f7d18", mid: "#73bf2e", light: "#b6ec6a", out: "#2d5a10" },
+  { dark: "#8a4a14", mid: "#e08a2e", light: "#ffc872", out: "#5a2e0a" },
+  { dark: "#1d6b6b", mid: "#35b5a8", light: "#8ff0dd", out: "#0f4040" },
+  { dark: "#8a2f5a", mid: "#e0679a", light: "#ffb3d1", out: "#5a1a3a" },
+];
+const SPK = ["...#......", "..##....#.", "####.#..#.", "####.#..#.", "..##....#.", "...#......"];
+const SPK_OFF = ["...#......", "..##.#..#.", "####..##..", "####..##..", "..##.#..#.", "...#......"];
+const PAUSE = ["##.##", "##.##", "##.##", "##.##", "##.##", "##.##"];
+const LOCK = [".###.", "#...#", "#####", "##.##", "#####", "#####"];
+
+// ---------- sky ----------
+const PHASES = [
+  { name: "day",    top: [70, 190, 235],  bot: [200, 238, 250], night: 0,   warm: 0 },
+  { name: "sunset", top: [255, 130, 100], bot: [255, 214, 150], night: 0,   warm: 1 },
+  { name: "night",  top: [14, 22, 60],    bot: [52, 66, 128],   night: 1,   warm: 0 },
+  { name: "dawn",   top: [120, 110, 205], bot: [255, 196, 175], night: 0.3, warm: 0.5 },
+];
+const sky = {};
+const resetSky = () => Object.assign(sky, JSON.parse(JSON.stringify(PHASES[0])));
+resetSky();
+const stars = Array.from({ length: 50 }, () => ({ x: Math.random() * W, y: Math.random() * (PLAY_H - 220), big: Math.random() < 0.2, ph: Math.random() * 6 }));
+const clouds = Array.from({ length: 6 }, (_, i) => ({ x: Math.random() * W, y: 30 + Math.random() * 240, v: i % 3 }));
+
+// ---------- add-on API ----------
+const handlers = {};
+function emit(n, d) { (handlers[n] || []).slice().forEach(f => { try { f(d, F); } catch (e) { console.error("[Flappy add-on]", n, e); } }); }
+const LOCKED = {}, buttons = [], toasts = [];
+let overlay = null;
+const api = { ctx, W, H, text: T, rect: R, panel, icon, snap, spr };
+const F = window.Flappy = {
+  version: 1,
+  on(n, f) { (handlers[n] = handlers[n] || []).push(f); return F; },
+  off(n, f) { handlers[n] = (handlers[n] || []).filter(x => x !== f); return F; },
+  get() { return { mode: s.state, score: s.score, best, skin: skinIdx, phase: phaseOf(s.score), run: { flaps: s.flaps, coins: s.coins, pipes: s.passed, time: s.t }, stats: { ...STATS } }; },
+  stats: STATS, saveStats,
+  store: {
+    get(k, d) { try { const v = localStorage.getItem("flappy_x_" + k); return v === null ? d : JSON.parse(v); } catch (e) { return d; } },
+    set(k, v) { try { localStorage.setItem("flappy_x_" + k, JSON.stringify(v)); } catch (e) {} },
+  },
+  toast(o) { toasts.push({ title: o.title || "", text: o.text || "", icon: o.icon || null, life: (o.ms || 3200) / 1000, age: 0 }); },
+  addButton(b) { buttons.push(b); return F; },
+  setOverlay(o) { overlay = o || null; },
+  lockSkin(i, why) { LOCKED[i] = why || "Locked"; if (skinIdx === i) { const free = [0, 1, 2, 3].find(k => !LOCKED[k]); if (free !== undefined) setSkin(free, true); } },
+  unlockSkin(i) { delete LOCKED[i]; },
+  beep, SKINS, PHASES,
+  px: { spr, text: T, rect: R, panel, icon, snap, W, H },
+};
+
+// ---------- state ----------
+let s, dist = 0, paused = false, clock = 0, last = performance.now();
+const phaseOf = n => Math.floor(n / 10) % 4;
+
+function reset() {
+  s = { state: "ready", y: PLAY_H / 2, vy: 0, pipes: [], score: 0, t: 0, flash: 0, shake: 0, bump: 0,
+        parts: [], pops: [], newBest: false, deadAt: 0, dT: 0, flaps: 0, coins: 0, passed: 0, phase: 0, cause: "" };
+  resetSky();
+  emit("ready", F.get());
+}
+reset();
+
+function setSkin(i, quiet) {
+  if (LOCKED[i]) { F.toast({ title: "Locked", text: LOCKED[i], ms: 2200 }); beep(160, 0.15, "square", 0.05); return; }
+  skinIdx = i;
+  try { localStorage.setItem("flappy_skin", i); } catch (e) {}
+  if (!quiet) beep(660 + i * 110, 0.08, "triangle", 0.05);
+  emit("skin", { index: i, name: SKINS[i].name });
+}
+const speed = () => BASE_SPEED + Math.min(60, s.score * 2);
+function burst(x, y, n, cols, v0, v1, life) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * Math.PI * 2, v = v0 + Math.random() * (v1 - v0);
+    s.parts.push({ x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, life, max: life, col: cols[i % cols.length], r: Math.random() < 0.4 ? 4 : 2 });
+  }
+}
+function addScore(src) {
+  s.score++; s.bump = 1; STATS.totalScore++;
+  emit(src, { score: s.score, source: src, run: F.get().run });
+  emit("score", { score: s.score, source: src, run: F.get().run });
+  const ph = phaseOf(s.score);
+  if (ph !== s.phase) { s.phase = ph; emit("phase", { phase: ph, name: PHASES[ph].name }); }
+}
+
+function flap() {
+  if (paused || overlay) return;
+  if (s.state === "ready") { s.state = "play"; STATS.runs++; emit("start", F.get()); }
+  if (s.state === "play") {
+    s.vy = FLAP; s.flaps++; STATS.flaps++;
+    beep(520, 0.12, "square", 0.05, 380);
+    const sk = SKINS[skinIdx];
+    for (let i = 0; i < 4; i++) s.parts.push({ x: BIRD_X - 14, y: s.y + 6, vx: -90 + Math.random() * 60, vy: 10 + Math.random() * 70, life: 0.4, max: 0.4, col: i % 2 ? sk.light : sk.body, r: 2 });
+    emit("flap", { flaps: s.flaps });
+  } else if (s.state === "dead") restart();
+}
+function restart() { if (s.state === "dead" && performance.now() - s.deadAt > 450) reset(); }
+function setPaused(v) { if (paused === v) return; paused = v; emit(v ? "pause" : "resume", {}); }
+function togglePause() { if (s.state === "play") setPaused(!paused); }
+
+function die(cause) {
+  s.state = "dead"; s.cause = cause; s.flash = 1; s.shake = 0.4; s.deadAt = performance.now(); s.dT = 0;
+  burst(BIRD_X, s.y, 22, [SKINS[skinIdx].body, SKINS[skinIdx].light, "#fff", SKINS[skinIdx].wing], 60, 260, 0.8);
+  beep(220, 0.35, "sawtooth", 0.08, -160);
+  STATS.deaths++;
+  if (s.score > best) {
+    best = s.score; s.newBest = true; STATS.bestScore = best;
+    try { localStorage.setItem("flappy_best", best); } catch (e) {}
+    setTimeout(() => {
+      if (s.state === "dead") for (let i = 0; i < 40; i++) s.parts.push({ x: 80 + Math.random() * 320, y: 150, vx: -80 + Math.random() * 160, vy: -80 + Math.random() * 120, life: 1.6, max: 1.6, col: ["#ff5d73", "#ffd23f", "#4cc9f0", "#7be495", "#b388ff"][i % 5], r: Math.random() < 0.5 ? 4 : 2 });
+      beep(784, 0.12, "triangle", 0.07); beep(988, 0.2, "triangle", 0.07, 0, 0.12);
+    }, 700);
+  }
+  saveStats();
+  emit("death", { score: s.score, best, newBest: s.newBest, cause, run: F.get().run });
+}
+
+const circleRect = (cx, cy, r, x, y, w, h) => {
+  const nx = Math.max(x, Math.min(cx, x + w)), ny = Math.max(y, Math.min(cy, y + h));
+  const dx = cx - nx, dy = cy - ny; return dx * dx + dy * dy < r * r;
+};
+function hitsPipe() {
+  const y = s.y, r = HIT_R;
+  return s.pipes.some(p =>
+    circleRect(BIRD_X, y, r, p.x, -20, PIPE_W, p.top + 20 - CAP_H) ||
+    circleRect(BIRD_X, y, r, p.x - CAP_X, p.top - CAP_H, PIPE_W + CAP_X * 2, CAP_H) ||
+    circleRect(BIRD_X, y, r, p.x - CAP_X, p.top + GAP, PIPE_W + CAP_X * 2, CAP_H) ||
+    circleRect(BIRD_X, y, r, p.x, p.top + GAP + CAP_H, PIPE_W, H));
+}
+
+function step(dt) {
+  clock += dt; s.t += dt;
+  s.flash = Math.max(0, s.flash - dt * 3); s.shake = Math.max(0, s.shake - dt); s.bump = Math.max(0, s.bump - dt * 5);
+  if (s.state === "dead") s.dT += dt;
+  s.parts = s.parts.filter(p => { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 400 * dt; p.life -= dt; return p.life > 0; });
+  s.pops = s.pops.filter(p => { p.y -= 40 * dt; p.life -= dt; return p.life > 0; });
+
+  const tp = PHASES[phaseOf(s.score)], k = 1 - Math.exp(-dt * 1.1);
+  for (let i = 0; i < 3; i++) { sky.top[i] = lerp(sky.top[i], tp.top[i], k); sky.bot[i] = lerp(sky.bot[i], tp.bot[i], k); }
+  sky.night = lerp(sky.night, tp.night, k); sky.warm = lerp(sky.warm, tp.warm, k);
+
+  if (s.state !== "dead") {
+    dist += speed() * dt;
+    clouds.forEach(c => { c.x -= (8 + c.v * 5) * dt; if (c.x < -120) { c.x = W + 20; c.y = 30 + Math.random() * 240; c.v = (Math.random() * 3) | 0; } });
+  }
+  if (s.state === "ready") { s.y = PLAY_H / 2 + Math.sin(s.t * 5) * 8; return; }
+  s.vy = Math.min(s.vy + GRAVITY * dt, MAX_FALL);
+  s.y += s.vy * dt;
+  if (s.state === "dead") { if (s.y > PLAY_H - 14) { s.y = PLAY_H - 14; s.vy = 0; } return; }
+  if (s.y < 14) { s.y = 14; s.vy = 0; }
+  STATS.playTime += dt;
+  emit("tick", { dt });
+
+  for (const p of s.pipes) {
+    p.x -= speed() * dt;
+    p.top = p.base + Math.sin(s.t * 1.7 + p.ph) * p.amp;
+    if (!p.passed && p.x + PIPE_W < BIRD_X - 14) { p.passed = true; s.passed++; STATS.pipes++; beep(880, 0.09, "triangle", 0.07, 300); addScore("pipe"); }
+    if (p.coin && !p.got && Math.hypot(BIRD_X - (p.x + PIPE_W / 2), s.y - (p.top + GAP / 2)) < HIT_R + 13) {
+      p.got = true; s.coins++; STATS.coins++;
+      burst(p.x + PIPE_W / 2, p.top + GAP / 2, 12, ["#ffd23f", "#fff3a0", "#fff"], 40, 160, 0.6);
+      s.pops.push({ x: p.x + PIPE_W / 2, y: p.top + GAP / 2 - 30, txt: "+1", life: 0.9 });
+      beep(1175, 0.08, "square", 0.05); beep(1568, 0.16, "square", 0.05, 0, 0.07);
+      addScore("coin");
+    }
+  }
+  s.pipes = s.pipes.filter(p => p.x + PIPE_W + CAP_X > 0);
+  while (!s.pipes.length || s.pipes[s.pipes.length - 1].x < W) {
+    const x = s.pipes.length ? s.pipes[s.pipes.length - 1].x + SPACING : W + 60;
+    const amp = s.score >= 10 ? Math.min(32, (s.score - 8) * 3) : 0, base = 100 + Math.random() * (PLAY_H - GAP - 200);
+    s.pipes.push({ x, base, top: base, amp: Math.random() < 0.7 ? amp : 0, ph: Math.random() * 6, passed: false, coin: Math.random() < 0.3, got: false, pal: PIPES[phaseOf(s.score)] });
+  }
+  if (s.state === "play") {
+    const ground = s.y + 14 >= PLAY_H;
+    if (ground || hitsPipe()) { s.y = Math.min(s.y, PLAY_H - 14); die(ground ? "ground" : "pipe"); }
+  }
+}
+
+// ---------- drawing ----------
+function drawSky() {
+  const n = Math.ceil(PLAY_H / 16);
+  for (let i = 0; i < n; i++) {
+    const k = i / (n - 1);
+    ctx.fillStyle = rgb([lerp(sky.top[0], sky.bot[0], k), lerp(sky.top[1], sky.bot[1], k), lerp(sky.top[2], sky.bot[2], k)]);
+    ctx.fillRect(0, i * 16, W, 17);
+  }
+  if (sky.night > 0.05) for (const st of stars) {
+    if (Math.sin(clock * 2 + st.ph) < -0.3) continue;
+    ctx.globalAlpha = Math.min(1, sky.night * 1.2); ctx.fillStyle = "#fff";
+    ctx.fillRect(snap(st.x), snap(st.y), 2, 2);
+    if (st.big) { ctx.fillRect(snap(st.x) - 2, snap(st.y), 2, 2); ctx.fillRect(snap(st.x) + 2, snap(st.y), 2, 2); ctx.fillRect(snap(st.x), snap(st.y) - 2, 2, 2); ctx.fillRect(snap(st.x), snap(st.y) + 2, 2, 2); }
+  }
+  ctx.globalAlpha = 1;
+  const sunA = Math.max(0, 1 - sky.night * 1.5);
+  if (sunA > 0.05) S(SUN, W - 130, 70 + sky.warm * 120, sunA > 0.6 ? 1 : 0.5);
+  if (sky.night > 0.15) S(MOON, 50, 80, sky.night > 0.6 ? 1 : 0.5);
+  for (const c of clouds) S(CLOUDS[c.v], c.x, c.y);
+}
+function layer(sp, y, k) {
+  const ox = -snap((dist * k) % W);
+  ctx.drawImage(sp, ox, snap(y), W, sp.height * 2); ctx.drawImage(sp, ox + W, snap(y), W, sp.height * 2);
+}
+function drawPipe(p) {
+  const pal = p.pal, x = snap(p.x), top = snap(p.top);
+  const bands = (x0, y0, y1, cols) => { let cx = x0; for (const [c, w] of cols) { ctx.fillStyle = c; ctx.fillRect(cx, y0, w * 2, y1 - y0); cx += w * 2; } };
+  const body = [[pal.out, 1], [pal.mid, 2], [pal.light, 4], [pal.mid, 14], [pal.dark, 14], [pal.out, 1]];
+  const cap = [[pal.out, 1], [pal.mid, 2], [pal.light, 4], [pal.mid, 16], [pal.dark, 16], [pal.out, 1]];
+  const drawCap = y => {
+    bands(x - CAP_X, y, y + CAP_H, cap);
+    ctx.fillStyle = pal.out; ctx.fillRect(x - CAP_X, y, PIPE_W + CAP_X * 2, 2); ctx.fillRect(x - CAP_X, y + CAP_H - 2, PIPE_W + CAP_X * 2, 2);
+    ctx.fillStyle = "rgba(255,255,255,.3)"; ctx.fillRect(x - CAP_X + 2, y + 2, PIPE_W + CAP_X * 2 - 4, 2);
+    ctx.fillStyle = "rgba(0,0,0,.18)"; ctx.fillRect(x - CAP_X + 2, y + CAP_H - 6, PIPE_W + CAP_X * 2 - 4, 4);
+  };
+  bands(x, -4, top - CAP_H, body); drawCap(top - CAP_H);
+  ctx.fillStyle = "rgba(0,0,0,.2)"; ctx.fillRect(x + 2, top - CAP_H - 8, PIPE_W - 4, 8);
+  bands(x, top + GAP + CAP_H, PLAY_H + 4, body); drawCap(top + GAP);
+  ctx.fillStyle = "rgba(0,0,0,.2)"; ctx.fillRect(x + 2, top + GAP + CAP_H, PIPE_W - 4, 8);
+  for (let y = 24; y < top - CAP_H - 8; y += 32) { ctx.fillStyle = "rgba(0,0,0,.08)"; ctx.fillRect(x + 22, y, 6, 2); }  // texture ticks
+  for (let y = top + GAP + CAP_H + 24; y < PLAY_H; y += 32) { ctx.fillStyle = "rgba(0,0,0,.08)"; ctx.fillRect(x + 22, y, 6, 2); }
+}
+function drawGround() {
+  const ox = -snap(dist % 48);
+  for (let x = ox; x < W; x += 48) ctx.drawImage(GROUND_TILE, x, PLAY_H, 48, GROUND);
+}
+function drawBird(x, y, tilt, frame, skin, a = 1) {
+  const sp = BIRDS[skin][frame], q = Math.PI / 12;
+  ctx.save(); ctx.translate(snap(x), snap(y)); ctx.rotate(Math.round(tilt / q) * q);
+  if (a !== 1) ctx.globalAlpha = a;
+  ctx.drawImage(sp, -sp.width, -sp.height, sp.width * 2, sp.height * 2);
+  ctx.restore();
+}
+const skinX = i => W / 2 + (i - 1.5) * 84, SKIN_Y = 450;
+
+function drawToasts(dt) {
+  for (let i = 0; i < Math.min(2, toasts.length); i++) {
+    const t = toasts[i]; t.age += dt;
+    const slide = Math.min(1, t.age * 5, (t.life - t.age) * 5), y = 100 + i * 76 - (1 - Math.max(0, slide)) * 100;
+    const w = 340, x = (W - w) / 2;
+    panel(x, y, w, 64, "#fff6d0", "#3a2a08", "#ead9a0");
+    let tx = W / 2;
+    if (t.icon) { ctx.drawImage(t.icon, snap(x + 14), snap(y + 16), t.icon.width * 2, t.icon.height * 2); tx = x + 46 + (w - 46) / 2; }
+    if (t.text) { T(t.title, tx, y + 12, 2, "#c0410f", "center"); T(t.text, tx, y + 36, 1, "#5a4a1a", "center"); }
+    else T(t.title, tx, y + 22, 2, "#c0410f", "center");
+  }
+  for (const t of toasts.slice(2)) t.age += 0;
+}
+
+function drawHud(dt) {
+  ctx.globalAlpha = 0.95;
+  icon(muted ? SPK_OFF : SPK, W - 52, 18, 4, "#fff");
+  if (s.state === "play") icon(PAUSE, W - 92, 18, 4, "#fff");
+  ctx.globalAlpha = 1;
+
+  if (s.state !== "ready") T(s.score, W / 2, 24, s.bump > 0.5 ? 5 : 4, "#fff", "center", "#2b2b2b");
+  for (const p of s.pops) { ctx.globalAlpha = Math.min(1, p.life * 2); T(p.txt, p.x, p.y, 2, "#ffe066", "center", "#5a3a00"); ctx.globalAlpha = 1; }
+
+  if (s.state === "ready" || s.state === "dead") buttons.forEach((b, i) => {
+    const bx = 16 + i * 56, by = 12;
+    panel(bx, by, 44, 44, "#f7ecb5", "#5a4a1a", "#e4d68e");
+    try { b.draw(api, bx, by); } catch (e) { console.error("[Flappy add-on] button", e); }
+  });
+
+  if (s.state === "ready") {
+    const bob = Math.round(Math.sin(clock * 3) * 2) * 2;
+    T("FLAPPY", W / 2, 70 + bob + 6, 7, "#7a3a00", "center");
+    T("FLAPPY", W / 2, 70 + bob, 7, "#ffd23f", "center", "#3a1d00");
+    T("TAP OR PRESS SPACE", W / 2, 340, 2, "#fff", "center", "#2b4a5a");
+    if (((clock * 2) | 0) % 2 === 0) { ctx.fillStyle = "#fff"; ctx.fillRect(W / 2 - 4, 380, 8, 8); }
+    for (let i = 0; i < 4; i++) {
+      const x = skinX(i), sel = i === skinIdx, lk = !!LOCKED[i];
+      if (sel) panel(x - 36, SKIN_Y - 8, 72, 56, "rgba(255,255,255,.35)", "#fff", "rgba(255,255,255,.2)");
+      drawBird(x, SKIN_Y + 20 + (sel ? Math.round(Math.sin(clock * 8) * 1) * 2 : 0), 0, sel ? ((clock * 8 | 0) % 3) : 1, i, lk ? 0.35 : sel ? 1 : 0.7);
+      if (lk) icon(LOCK, x - 10, SKIN_Y + 8, 4, "#fff");
+    }
+    T(SKINS[skinIdx].name, W / 2, SKIN_Y + 72, 2, "#fff", "center", "#2b4a5a");
+    T("BEST " + best, W / 2, 570, 2, "#ffe066", "center", "#5a3a00");
+  }
+
+  if (paused) {
+    ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fillRect(0, 0, W, H);
+    T("PAUSED", W / 2, H / 2 - 30, 6, "#fff", "center", "#2b2b2b");
+    T("TAP OR PRESS P", W / 2, H / 2 + 40, 2, "#fff", "center", "#2b2b2b");
+  }
+
+  if (s.state === "dead") {
+    const e = Math.min(1, s.dT * 3.2), ease = 1 - Math.pow(1 - e, 3);
+    const x0 = 60, y0 = 210 + snap((1 - ease) * 90), w = 360, h = 220;
+    ctx.globalAlpha = ease;
+    T("GAME OVER", W / 2, y0 - 84, 6, "#ff7a3d", "center", "#3a1505");
+    panel(x0, y0, w, h);
+    const mi = s.score >= 35 ? 3 : s.score >= 20 ? 2 : s.score >= 10 ? 1 : s.score >= 5 ? 0 : -1;
+    if (mi >= 0) ctx.drawImage(MEDALS[mi], x0 + 50, y0 + 60 - (s.dT > 0.45 && s.dT < 0.6 ? 4 : 0), 48, 60);
+    else { ctx.fillStyle = "#cfc48c"; ctx.fillRect(x0 + 54, y0 + 76, 40, 40); T("?", x0 + 74, y0 + 82, 4, "#a89c5a"); }
+    const shown = Math.round(s.score * Math.min(1, Math.max(0, (s.dT - 0.25) / 0.6)));
+    T("SCORE", x0 + w - 26, y0 + 22, 2, "#a0602a", "right");
+    T(shown, x0 + w - 26, y0 + 46, 4, "#fff", "right", "#3a2a08");
+    T("BEST", x0 + w - 26, y0 + 108, 2, "#a0602a", "right");
+    T(best, x0 + w - 26, y0 + 132, 4, "#fff", "right", "#3a2a08");
+    if (s.newBest && s.dT > 0.7) { panel(x0 + 30, y0 + 134, 88, 36, "#ff5d3d", "#5a1a08", "#d9402a"); T("NEW!", x0 + 74, y0 + 144, 2, "#fff"); }
+    if (performance.now() - s.deadAt > 450 && ((clock * 3) | 0) % 2 === 0) T("TAP OR PRESS R", W / 2, y0 + h - 34, 2, "#5a4a1a");
+    ctx.globalAlpha = 1;
+  }
+}
+
+function render(dt) {
+  ctx.save();
+  if (s.shake) ctx.translate(snap((Math.random() - 0.5) * s.shake * 40), snap((Math.random() - 0.5) * s.shake * 40));
+  drawSky();
+  layer(MOUNTAINS, PLAY_H - 190, 0.05);
+  layer(HILLS, PLAY_H - 125, 0.15);
+  layer(BUSHES, PLAY_H - 66, 0.35);
+  s.pipes.forEach(drawPipe);
+  for (const p of s.pipes) if (p.coin && !p.got) S(COINS[((clock * 8) | 0) % 4], p.x + PIPE_W / 2 - 14, p.top + GAP / 2 - 14 + Math.round(Math.sin(clock * 3 + p.ph) * 2) * 2);
+  drawGround();
+  if (sky.night > 0.02) { ctx.fillStyle = `rgba(8,14,50,${(sky.night * 0.38).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
+  if (sky.warm > 0.02) { ctx.fillStyle = `rgba(255,120,60,${(sky.warm * 0.1).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
+  for (const p of s.parts) { ctx.globalAlpha = Math.max(0, Math.min(1, p.life / p.max * 1.5)); R(p.x, p.y, p.r, p.r, p.col); }
+  ctx.globalAlpha = 1;
+  const tilt = s.state === "ready" ? 0 : Math.max(-25, Math.min(85, s.vy * 0.12)) * Math.PI / 180;
+  const seq = [1, 0, 1, 2], frame = s.state === "dead" ? 0 : s.state === "ready" ? seq[((s.t * 8) | 0) % 4] : s.vy > 250 ? 0 : seq[((s.t * 16) | 0) % 4];
+  drawBird(BIRD_X, s.y, tilt, frame, skinIdx);
+  ctx.restore();
+  if (s.flash > 0) { ctx.fillStyle = `rgba(255,255,255,${(s.flash * 0.8).toFixed(3)})`; ctx.fillRect(0, 0, W, H); }
+  drawHud(dt);
+  if (overlay) { try { overlay.draw(api); } catch (e) { console.error("[Flappy add-on] overlay", e); overlay = null; } }
+  drawToasts(dt);
+  toasts.forEach(t => { }); for (let i = toasts.length - 1; i >= 0; i--) if (toasts[i].age >= toasts[i].life) toasts.splice(i, 1);
+  dctx.drawImage(lo, 0, 0, cv.width, cv.height);
+}
+
+function tick(now) {
+  const dt = Math.min((now - last) / 1000, 0.05); last = now;
+  if (!paused && !overlay) step(dt); else if (overlay) clock += dt;
+  render(dt);
+  requestAnimationFrame(tick);
+}
+requestAnimationFrame(tick);
+addEventListener("pagehide", saveStats);
+
+// ---------- input ----------
+addEventListener("keydown", e => {
+  if (overlay) { if (overlay.key) overlay.key(e); e.preventDefault(); return; }
+  const k = e.key.toLowerCase();
+  if ([" ", "arrowup", "w"].includes(k)) { e.preventDefault(); if (!e.repeat) { if (paused) setPaused(false); else flap(); } }
+  else if (k === "p" || k === "escape") { if (paused) setPaused(false); else togglePause(); }
+  else if (k === "r") restart();
+  else if (k === "m") muted = !muted;
+  else if (k.length === 1 && "1234".includes(k) && s.state !== "play") setSkin(+k - 1);
+});
+cv.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  if (overlay) { if (overlay.pointer) overlay.pointer(x, y, "down"); return; }
+  if (y < 64 && x > W - 80) { muted = !muted; return; }
+  if (y < 64 && x > W - 120 && s.state === "play") { togglePause(); return; }
+  if (paused) { setPaused(false); return; }
+  if (s.state === "ready" || s.state === "dead") {
+    for (let i = 0; i < buttons.length; i++) { const bx = 16 + i * 56; if (x >= bx && x <= bx + 44 && y >= 12 && y <= 56) { try { buttons[i].onClick(F); } catch (er) { console.error(er); } return; } }
+  }
+  if (s.state === "ready") for (let i = 0; i < 4; i++) if (Math.abs(x - skinX(i)) < 40 && Math.abs(y - (SKIN_Y + 20)) < 40) { setSkin(i); return; }
+  flap();
+});
+addEventListener("blur", () => { if (s.state === "play") setPaused(true); });
+document.addEventListener("visibilitychange", () => { if (document.hidden && s.state === "play") setPaused(true); });
+</script>
+<!-- Optional add-on: drop an achievements.js next to this file. A missing file is simply ignored. -->
+<script src="achievements.js"></script>
+</body>
+</html>
