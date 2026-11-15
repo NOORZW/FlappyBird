@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#102b36">
+<title>Wings of Accord — a little game for a gentler world</title>
+<style>
+	:root{color-scheme:dark;--ink:#f7f3e8;--muted:#c0d0ca;--gold:#ffd886;--teal:#9ee3d0}
+	*{box-sizing:border-box}
+	body{margin:0;min-height:100vh;display:grid;place-items:center;overflow:hidden;background:#102b36;color:var(--ink);font-family:ui-rounded,"Avenir Next",system-ui,sans-serif}
+	.shell{width:min(100vw,520px);height:min(100dvh,900px);min-height:540px;position:relative;overflow:hidden;background:#183c47;isolation:isolate}
+	canvas{position:absolute;inset:0;width:100%;height:100%;display:block}
+	.hud{position:absolute;inset:0;pointer-events:none;padding:calc(20px + env(safe-area-inset-top)) 22px 18px;display:flex;flex-direction:column;align-items:center}
+	.brand{align-self:flex-start;font-size:11px;letter-spacing:.2em;text-transform:uppercase;color:#d7e5d9;font-weight:700}
+	.brand span{color:var(--gold)}
+	.score{margin-top:24px;font-size:clamp(54px,14vw,76px);line-height:1;font-weight:800;letter-spacing:-.07em;text-shadow:0 3px 20px #17364166}
+	.score-label{font-size:10px;letter-spacing:.25em;text-transform:uppercase;color:#d4e5da;margin-top:8px}
+	.status{margin-top:auto;align-self:stretch;display:flex;justify-content:space-between;align-items:end;color:#f3f1df;font-size:12px;text-shadow:0 1px 5px #16343f}
+	.status strong{display:block;font-size:17px;font-weight:650;margin-top:4px}
+	.status .right{text-align:right}
+	.veil{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:linear-gradient(180deg,#102b3655,#102b3699);transition:opacity .25s,visibility .25s}
+	.veil.hidden{opacity:0;visibility:hidden;pointer-events:none}
+	.card{width:min(100%,370px);padding:30px 26px 26px;border:1px solid #ffffff27;border-radius:26px;background:#153640df;box-shadow:0 25px 80px #071a2080;text-align:center;backdrop-filter:blur(16px)}
+	.eyebrow{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:var(--teal);font-weight:750}
+	h1{font-size:clamp(34px,10vw,49px);line-height:.98;letter-spacing:-.055em;margin:12px 0 14px}
+	.copy{color:#d2dfd8;font-size:14px;line-height:1.55;margin:0 auto 21px;max-width:290px}
+	button{font:inherit;color:#263a38;background:var(--gold);border:0;border-radius:999px;padding:14px 25px;font-weight:800;cursor:pointer;box-shadow:0 5px 0 #c4934e;transition:transform .12s,filter .12s}
+	button:hover{filter:brightness(1.07);transform:translateY(-1px)}
+	button:active{transform:translateY(3px);box-shadow:0 2px 0 #c4934e}
+	button:focus-visible{outline:3px solid white;outline-offset:4px}
+	.hint{font-size:11px;color:#c0d0ca;margin-top:17px;line-height:1.5}
+	.quote{font-size:13px;font-style:italic;color:#f6e5bb;margin:0 0 19px;line-height:1.5}
+	.sound{position:absolute;right:18px;top:calc(17px + env(safe-area-inset-top));z-index:2;pointer-events:auto;border:1px solid #ffffff42;color:white;background:#16394499;box-shadow:none;padding:9px 12px;font-size:11px}
+	@media(max-height:620px){.shell{min-height:0}.card{padding:22px}.score{margin-top:12px}.copy{margin-bottom:14px}}
+</style>
+</head>
+<body>
+<main class="shell" aria-label="Wings of Accord game">
+	<canvas id="game" aria-label="A peaceful flight through the sky. Tap, click, or press Space to rise." role="img"></canvas>
+	<button class="sound" id="sound" type="button" aria-label="Turn sound on">♫ Sound off</button>
+	<div class="hud" aria-hidden="true">
+		<div class="brand">A small game for <span>a big-hearted world</span></div>
+		<div class="score" id="score">0</div><div class="score-label">bridges built</div>
+		<div class="status"><div>FLIGHT<strong id="flight">New dawn</strong></div><div class="right">KINDNESS<strong id="kindness">0 gathered</strong></div></div>
+	</div>
+	<section class="veil" id="veil" aria-live="polite">
+		<div class="card">
+			<div class="eyebrow" id="eyebrow">A gentler kind of flight</div>
+			<h1 id="title">Wings of<br>Accord</h1>
+			<p class="copy" id="copy">The sky is wide enough for everyone. Carry a little light through it, and leave every doorway open.</p>
+			<p class="quote" id="quote" hidden></p>
+			<button id="start" type="button">Begin together</button>
+			<div class="hint" id="hint">Tap, click, or press <b>Space</b> to rise.<br>Glide through open arches. Gather little lights.</div>
+		</div>
+	</section>
+</main>
+<script>
+(()=>{
+	const canvas=document.querySelector('#game'),ctx=canvas.getContext('2d');
+	const veil=document.querySelector('#veil'),startBtn=document.querySelector('#start'),scoreEl=document.querySelector('#score'),kindEl=document.querySelector('#kindness'),flightEl=document.querySelector('#flight');
+	const soundBtn=document.querySelector('#sound');
+	let w=0,h=0,dpr=1,last=0,mode='ready',score=0,kindness=0,world=0,spawn=0,bird={x:0,y:0,vy:0,rot:0},gates=[],sparks=[],clouds=[],audio=null,sound=false;
+	const quotes=['“Peace begins with a smile.” — Mother Teresa','“No act of kindness, no matter how small, is ever wasted.” — Aesop','“If we have no peace, it is because we have forgotten that we belong to each other.” — Mother Teresa','“Be the change that you wish to see in the world.” — often attributed to Gandhi'];
+	const rand=(a,b)=>a+Math.random()*(b-a), clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+	function resize(){const r=canvas.getBoundingClientRect();w=r.width;h=r.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(w*dpr);canvas.height=Math.round(h*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);bird.x=w*.28;if(!bird.y)bird.y=h*.46;clouds=Array.from({length:7},(_,i)=>({x:(i/7)*w+rand(0,40),y:rand(h*.12,h*.75),s:rand(.6,1.35)}));}
+	addEventListener('resize',resize);resize();
+	function tone(freq=620,dur=.08,type='sine',vol=.035){if(!sound)return;try{audio=audio||new(window.AudioContext||window.webkitAudioContext)();if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type=type;o.frequency.value=freq;g.gain.setValueAtTime(vol,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+dur);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+dur)}catch(e){}}
+	soundBtn.addEventListener('click',()=>{sound=!sound;soundBtn.textContent=sound?'♫ Sound on':'♫ Sound off';soundBtn.setAttribute('aria-label',sound?'Turn sound off':'Turn sound on');if(sound)tone(660)});
+	function begin(){score=0;kindness=0;gates=[];sparks=[];world=0;spawn=.65;bird.y=h*.46;bird.vy=0;mode='play';veil.classList.add('hidden');scoreEl.textContent='0';kindEl.textContent='0 gathered';flightEl.textContent='New dawn';flap();}
+	function flap(){if(mode==='ready'){begin();return}if(mode==='over')return;bird.vy=-h*.46;tone(530,.07,'sine',.025)}
+	startBtn.addEventListener('click',begin);
+	canvas.addEventListener('pointerdown',e=>{e.preventDefault();flap()});
+	addEventListener('keydown',e=>{if(['Space','ArrowUp','KeyW'].includes(e.code)){e.preventDefault();if(!e.repeat)flap()}if(e.code==='Enter'&&mode!=='play')begin()});
+	function addGate(){const gap=Math.max(150,Math.min(205,h*.27));const cy=rand(h*.28,h*.68);gates.push({x:w+50,cy,gap,done:false,seed:false});}
+	function puff(x,y,color,n=8){for(let i=0;i<n;i++)sparks.push({x,y,vx:rand(-100,100),vy:rand(-150,30),life:rand(.4,.8),max:.8,r:rand(2,5),color})}
+	function finish(){if(mode!=='play')return;mode='over';tone(190,.3,'triangle',.04);veil.classList.remove('hidden');document.querySelector('#eyebrow').textContent='Every flight leaves something brighter';document.querySelector('#title').innerHTML='The sky is<br>still ours';document.querySelector('#copy').textContent=`You built ${score} ${score===1?'bridge':'bridges'} and gathered ${kindness} ${kindness===1?'little light':'little lights'}. The world is kinder for every small thing we carry for one another.`;const q=document.querySelector('#quote');q.hidden=false;q.textContent=quotes[Math.floor(Math.random()*quotes.length)];startBtn.textContent='Fly together again';document.querySelector('#hint').textContent='A fresh sky is always waiting.';}
+	function roundRect(x,y,ww,hh,r){ctx.beginPath();ctx.roundRect(x,y,ww,hh,r);}
+	function drawBackground(dt){const sky=ctx.createLinearGradient(0,0,0,h);sky.addColorStop(0,'#83c8c0');sky.addColorStop(.55,'#b7d9bb');sky.addColorStop(1,'#f4d89d');ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);
+		// Warm sun and a soft halo
+		const sx=w*.78,sy=h*.2;const halo=ctx.createRadialGradient(sx,sy,8,sx,sy,h*.27);halo.addColorStop(0,'#fff6d5aa');halo.addColorStop(1,'#fff6d500');ctx.fillStyle=halo;ctx.fillRect(sx-h*.28,sy-h*.28,h*.56,h*.56);ctx.fillStyle='#fff0c8';ctx.beginPath();ctx.arc(sx,sy,Math.min(w,h)*.043,0,Math.PI*2);ctx.fill();
+		clouds.forEach(c=>{if(mode==='play')c.x-=dt*10*c.s;if(c.x<-100)c.x=w+50;drawCloud(c.x,c.y,c.s)});
+		for(let layer=0;layer<3;layer++){const base=h*(.68+layer*.085),amp=h*(.035+layer*.012),speed=(.09+layer*.045);ctx.beginPath();ctx.moveTo(0,h);for(let x=0;x<=w+10;x+=10){const y=base+Math.sin((x+world*speed)/Math.max(80,w*.22)+layer)*amp+Math.sin(x/90+layer*2)*amp*.3;ctx.lineTo(x,y)}ctx.lineTo(w,h);ctx.closePath();ctx.fillStyle=['#7eb89b','#589b83','#39796e'][layer];ctx.fill()}
+	}
+	function drawCloud(x,y,s){ctx.fillStyle='#f8f2db80';ctx.beginPath();ctx.ellipse(x,y,34*s,11*s,0,0,Math.PI*2);ctx.ellipse(x-14*s,y-7*s,16*s,14*s,0,0,Math.PI*2);ctx.ellipse(x+5*s,y-11*s,20*s,17*s,0,0,Math.PI*2);ctx.ellipse(x+22*s,y-3*s,15*s,12*s,0,0,Math.PI*2);ctx.fill()}
+	function drawGate(g){const x=g.x,half=g.gap/2,thick=16,top=g.cy-half,bottom=g.cy+half;ctx.lineCap='round';
+		// Open, luminous arches: never a wall, always a welcome.
+		ctx.strokeStyle='#397a6c';ctx.lineWidth=thick+4;ctx.beginPath();ctx.moveTo(x,top);ctx.bezierCurveTo(x-3,top-34,x+3,top-46,x+18,top-46);ctx.lineTo(x+34,top-46);ctx.stroke();ctx.beginPath();ctx.moveTo(x,bottom);ctx.bezierCurveTo(x-3,bottom+34,x+3,bottom+46,x+18,bottom+46);ctx.lineTo(x+34,bottom+46);ctx.stroke();
+		ctx.strokeStyle='#d9bb70';ctx.lineWidth=thick;ctx.beginPath();ctx.moveTo(x,top);ctx.bezierCurveTo(x-3,top-34,x+3,top-46,x+18,top-46);ctx.lineTo(x+34,top-46);ctx.stroke();ctx.beginPath();ctx.moveTo(x,bottom);ctx.bezierCurveTo(x-3,bottom+34,x+3,bottom+46,x+18,bottom+46);ctx.lineTo(x+34,bottom+46);ctx.stroke();
+		ctx.fillStyle='#fff1bf';for(const yy of [top-45,bottom+45]){ctx.beginPath();ctx.arc(x+33,yy,3,0,Math.PI*2);ctx.fill()}
+		if(!g.seed){const pulse=1+Math.sin(world*4+g.x)*.12;ctx.save();ctx.translate(x+17,g.cy);ctx.scale(pulse,pulse);ctx.shadowColor='#fff4a8';ctx.shadowBlur=15;ctx.fillStyle='#fff0a8';ctx.beginPath();ctx.arc(0,0,7,0,Math.PI*2);ctx.fill();ctx.restore()}
+	}
+	function drawBird(){ctx.save();ctx.translate(bird.x,bird.y);ctx.rotate(bird.rot);ctx.shadowColor='#183c4770';ctx.shadowBlur=12;ctx.shadowOffsetY=5;
+		// Tiny traveling dove, with a folded wing and golden beak.
+		ctx.fillStyle='#fff8e9';ctx.beginPath();ctx.ellipse(0,0,19,14,0,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.ellipse(-5,-9,10,7,-.65,0,Math.PI*2);ctx.fill();ctx.fillStyle='#e8f0df';ctx.beginPath();ctx.ellipse(-5,1,11,5,.3+Math.sin(world*10)*.18,0,Math.PI*2);ctx.fill();ctx.fillStyle='#e8a84f';ctx.beginPath();ctx.moveTo(15,-3);ctx.lineTo(27,1);ctx.lineTo(15,4);ctx.closePath();ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#263a38';ctx.beginPath();ctx.arc(10,-6,1.7,0,Math.PI*2);ctx.fill();ctx.restore();
+	}
+	function draw(){ctx.clearRect(0,0,w,h);drawBackground(0);gates.forEach(drawGate);sparks.forEach(p=>{ctx.globalAlpha=clamp(p.life/p.max,0,1);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1});drawBird();}
+	function update(dt){world+=dt;if(mode==='play'){
+			const speed=Math.min(190+score*2,260);bird.vy+=h*1.25*dt;bird.y+=bird.vy*dt;bird.rot=clamp(bird.vy/(h*.65),-.48,.85);spawn-=dt;if(spawn<=0){addGate();spawn=Math.max(1.32,1.72-score*.012)}
+			for(const g of gates){g.x-=speed*dt;if(!g.done&&g.x+34<bird.x){g.done=true;score++;scoreEl.textContent=score;flightEl.textContent=score<4?'Finding our rhythm':score<10?'Making room':'Together, onward';tone(740,.12,'sine',.035);puff(bird.x,bird.y,'#ffecaa',5)}
+				const near=bird.x+12>g.x-7&&bird.x-12<g.x+26;if(near&&(bird.y-10<g.cy-g.gap/2||bird.y+10>g.cy+g.gap/2)){finish();break}
+				if(!g.seed&&Math.abs((g.x+17)-bird.x)<18&&Math.abs(g.cy-bird.y)<20){g.seed=true;kindness++;kindEl.textContent=`${kindness} gathered`;tone(970,.16,'sine',.04);puff(g.x+17,g.cy,'#fff3b0',12)}
+			}
+			gates=gates.filter(g=>g.x>-60);if(bird.y>h*.87||bird.y<10)finish();
+		}else if(mode==='ready'){bird.y=h*.46+Math.sin(world*2.7)*7;bird.rot=Math.sin(world*2.7)*.04}else if(mode==='over'){bird.vy+=h*1.1*dt;bird.y=Math.min(h*.88,bird.y+bird.vy*dt)}
+		sparks.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=100*dt});sparks=sparks.filter(p=>p.life>0);
+	}
+	function loop(now){const dt=Math.min((now-last)/1000||0,.035);last=now;update(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

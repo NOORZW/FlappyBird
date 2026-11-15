@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#102b40">
+<title>Common Sky — A gentler kind of flight</title>
+<style>
+	:root { color-scheme: dark; --ink:#f5f5e9; --muted:#bad0d0; --gold:#ffd978; }
+	* { box-sizing:border-box; }
+	html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#102b40; font-family:ui-rounded,"Trebuchet MS",system-ui,sans-serif; }
+	body { display:grid; place-items:center; }
+	#game { position:relative; width:min(100vw, 1440px); height:min(100vh, 900px); min-height:420px; overflow:hidden; background:#87cbd0; isolation:isolate; }
+	canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+	.hud { position:absolute; inset:0 0 auto; display:flex; align-items:flex-start; justify-content:space-between; padding:clamp(14px,3vw,30px); pointer-events:none; }
+	.brand { color:#fff9e9; text-shadow:0 2px 12px #17465b66; letter-spacing:.13em; font-size:12px; font-weight:800; text-transform:uppercase; }
+	.brand span { display:block; margin-top:4px; font-size:10px; letter-spacing:.08em; color:#e7f2dc; font-weight:500; text-transform:none; }
+	.stats { display:flex; gap:9px; }
+	.pill { min-width:90px; padding:9px 13px; border:1px solid #ffffff55; border-radius:20px; background:#123c4b38; color:#fff; font-size:12px; text-align:center; backdrop-filter:blur(8px); }
+	.pill b { color:#ffe39a; font-size:14px; }
+	#progress { position:absolute; left:clamp(14px,3vw,30px); right:clamp(14px,3vw,30px); top:74px; height:4px; border-radius:6px; background:#ffffff45; overflow:hidden; pointer-events:none; }
+	#progressFill { width:0%; height:100%; background:#ffe29b; border-radius:6px; transition:width .25s; }
+	.overlay { position:absolute; z-index:2; inset:0; display:grid; place-items:center; padding:22px; background:linear-gradient(180deg,#0d304522,#092b3c70); transition:opacity .35s; }
+	.overlay.hidden { opacity:0; pointer-events:none; }
+	.card { width:min(520px,100%); padding:clamp(26px,5vw,48px); border:1px solid #ffffff50; border-radius:28px; color:var(--ink); text-align:center; background:linear-gradient(150deg,#123b50eF,#153b4be8); box-shadow:0 24px 80px #09253955; backdrop-filter:blur(16px); }
+	.eyebrow { color:#aee4cb; font-size:11px; font-weight:800; letter-spacing:.19em; text-transform:uppercase; }
+	h1 { margin:10px 0 12px; font-size:clamp(38px,8vw,64px); line-height:.97; letter-spacing:-.055em; }
+	.card p { max-width:370px; margin:0 auto 20px; color:#d5e7df; line-height:1.55; font-size:15px; }
+	.how { display:flex; justify-content:center; flex-wrap:wrap; gap:8px; margin:22px 0 26px; }
+	.how span { padding:8px 11px; border-radius:20px; color:#d8e9dc; background:#ffffff12; font-size:12px; }
+	button { border:0; border-radius:30px; padding:14px 28px; color:#17394a; background:#ffe19a; font:800 14px inherit; font-size:14px; cursor:pointer; box-shadow:0 6px 20px #061c2b55; transition:transform .15s,background .15s; }
+	button:hover { transform:translateY(-2px); background:#ffedbb; }
+	button:focus-visible { outline:3px solid white; outline-offset:3px; }
+	#hint { position:absolute; left:50%; bottom:22px; transform:translateX(-50%); color:#fffde7; text-shadow:0 2px 8px #153d4b; font-size:12px; letter-spacing:.04em; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity .3s; }
+	#hint.show { opacity:.9; }
+	@media(max-width:560px) { .pill { min-width:68px; padding:8px 9px; font-size:10px; } .brand { font-size:10px; } .brand span { font-size:9px; } #progress { top:65px; } }
+</style>
+</head>
+<body>
+<main id="game" aria-label="Common Sky migration game">
+	<canvas id="scene" aria-label="A bird flying through a colorful sky"></canvas>
+	<div class="hud">
+		<div class="brand">COMMON SKY<span>Every safe passage makes room for another</span></div>
+		<div class="stats"><div class="pill">SEEDS &nbsp;<b id="seedCount">0</b></div><div class="pill">FLOCK &nbsp;<b id="flockCount">1</b></div></div>
+	</div>
+	<div id="progress"><div id="progressFill"></div></div>
+	<div id="hint">Move up and down to find the gentle currents</div>
+	<section class="overlay" id="intro">
+		<div class="card"><div class="eyebrow">A small journey, together</div><h1>Common<br>Sky</h1><p>Guide a migrating bird toward a living sanctuary. Gather seeds, welcome fellow travelers, and leave the sky kinder than you found it.</p><div class="how"><span>↑ ↓ / W S to steer</span><span>Touch or move to guide</span><span>Find seeds & friends</span></div><button id="start">Begin the migration</button></div>
+	</section>
+	<section class="overlay hidden" id="ending">
+		<div class="card"><div class="eyebrow">A place for everyone</div><h1>Made it<br>together.</h1><p id="endingCopy">The sanctuary is flourishing. Your journey has helped make a safer sky for the flock.</p><div class="how"><span id="finalSeeds">Seeds gathered: 0</span><span id="finalFlock">Travelers welcomed: 0</span></div><button id="again">Fly another season</button></div>
+	</section>
+</main>
+<script>
+(() => {
+	const canvas = document.getElementById('scene'), ctx = canvas.getContext('2d');
+	const game = document.getElementById('game');
+	const intro = document.getElementById('intro'), ending = document.getElementById('ending');
+	const seedLabel = document.getElementById('seedCount'), flockLabel = document.getElementById('flockCount');
+	const progressFill = document.getElementById('progressFill'), hint = document.getElementById('hint');
+	let w=0,h=0,dpr=1,last=0,run=false,complete=false,time=0,travel=0,targetY=0,seedCount=0,flock=1,objects=[],sparkles=[],birds=[],sections=[];
+	const journey=3400, bird={y:0,vy:0,r:17,flash:0};
+	const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+	function resize(){
+		const r=game.getBoundingClientRect(); dpr=Math.min(devicePixelRatio||1,2); w=r.width; h=r.height;
+		canvas.width=Math.round(w*dpr); canvas.height=Math.round(h*dpr); ctx.setTransform(dpr,0,0,dpr,0,0);
+		if(!run) { bird.y=h*.48; targetY=bird.y; }
+		makeScenery();
+	}
+	function makeScenery(){
+		sparkles=Array.from({length:70},()=>({x:Math.random()*w,y:Math.random()*h,r:Math.random()*2+.5,a:Math.random()*.4+.1,s:Math.random()*.3+.1}));
+		sections=[{at:0,name:'The Open Coast',c1:'#83cbd0',c2:'#e5d89d',ground:'#b4d38b'}, {at:850,name:'Greenwater Wetlands',c1:'#68bdb9',c2:'#d6e8aa',ground:'#91c67e'}, {at:1700,name:'The Sunlit Highlands',c1:'#83bed1',c2:'#f1cf9d',ground:'#c6ce91'}, {at:2550,name:'The Shared Valley',c1:'#83cbb5',c2:'#f3d9a1',ground:'#a9d18c'}];
+	}
+	function section(){ return sections[Math.min(sections.length-1,Math.floor(travel/(journey/sections.length)))]; }
+	function makeObjects(){
+		while(objects.length<22){
+			const lastX=objects.length?Math.max(...objects.map(o=>o.x)):travel+450;
+			const x=Math.max(travel+420,lastX+230+Math.random()*210);
+			const kind=Math.random()<.66?'seed':Math.random()<.62?'friend':'cloud';
+			const y=h*(.2+Math.random()*.59);
+			objects.push({x,y,kind,r:kind==='cloud'?38:kind==='friend'?21:13,phase:Math.random()*6.28,got:false});
+		}
+	}
+	function drawBackground(dt){
+		const s=section(), g=ctx.createLinearGradient(0,0,0,h); g.addColorStop(0,s.c1);g.addColorStop(.72,s.c2);g.addColorStop(1,s.ground);ctx.fillStyle=g;ctx.fillRect(0,0,w,h);
+		// Soft, drifting cloud bands
+		for(let i=0;i<5;i++){
+			const x=((i*270-travel*.18)%(w+360)+w+360)%(w+360)-130;
+			const y=h*(.13+i*.115)+Math.sin(time*.4+i)*9;
+			ctx.fillStyle=`rgba(255,255,238,${.12+i%2*.04})`; puff(x,y,54+i%3*13,18);
+		}
+		for(const p of sparkles){p.x-=p.s*dt*.03;if(p.x<0)p.x=w;ctx.fillStyle=`rgba(255,255,230,${p.a*(.7+.3*Math.sin(time+p.y))})`;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();}
+		// Distant hills and a calm horizon
+		ctx.fillStyle=s.ground;ctx.beginPath();ctx.moveTo(0,h);
+		for(let x=0;x<=w+20;x+=20){const wx=x+travel*.14;ctx.lineTo(x,h*.84+Math.sin(wx*.006)*17+Math.sin(wx*.014)*8);}
+		ctx.lineTo(w,h);ctx.fill();
+		const title=s.name;ctx.globalAlpha=.5;ctx.fillStyle='#fffbea';ctx.font=`600 ${Math.max(11,Math.min(14,w*.018))}px system-ui`;ctx.textAlign='center';ctx.fillText(title,w*.5,h*.17);ctx.globalAlpha=1;
+	}
+	function puff(x,y,rx,ry){ctx.beginPath();ctx.ellipse(x,y,rx,ry,0,0,Math.PI*2);ctx.ellipse(x-rx*.55,y+ry*.25,rx*.58,ry*.68,0,0,Math.PI*2);ctx.ellipse(x+rx*.48,y+ry*.25,rx*.6,ry*.73,0,0,Math.PI*2);ctx.fill();}
+	function drawObject(o){
+		const x=w*.24+(o.x-travel), y=o.y+Math.sin(time*1.6+o.phase)*7;
+		if(x<-80||x>w+80)return;
+		if(o.kind==='seed'){
+			ctx.save();ctx.translate(x,y);ctx.rotate(Math.sin(time+o.phase)*.18);ctx.fillStyle='#fff0a8';ctx.shadowColor='#fff4bd';ctx.shadowBlur=14;ctx.beginPath();ctx.ellipse(0,0,8,12,.5,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.strokeStyle='#e7b64f';ctx.lineWidth=1.5;ctx.beginPath();ctx.moveTo(-2,6);ctx.quadraticCurveTo(1,-2,4,-7);ctx.stroke();ctx.restore();
+		}else if(o.kind==='friend'){
+			drawBird(x,y,.72,'#f7f0d7',time*5+o.phase);
+		}else{
+			ctx.save();ctx.globalAlpha=.5;ctx.fillStyle='#597f93';puff(x,y,36,22);ctx.restore();ctx.strokeStyle='#e4f7ed';ctx.globalAlpha=.6;ctx.setLineDash([4,7]);ctx.beginPath();ctx.arc(x,y,54,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.globalAlpha=1;
+		}
+	}
+	function drawBird(x,y,scale,color,phase){
+		ctx.save();ctx.translate(x,y);ctx.scale(scale,scale);ctx.rotate(clamp(bird.vy*.035,-.35,.35));
+		ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(0,0,19,13,0,0,Math.PI*2);ctx.fill();
+		ctx.fillStyle=color;ctx.beginPath();ctx.ellipse(-4,Math.sin(phase)*5-5,11,6,-.25,0,Math.PI*2);ctx.fill();
+		ctx.fillStyle='#f6bd66';ctx.beginPath();ctx.moveTo(15,-3);ctx.lineTo(27,1);ctx.lineTo(15,4);ctx.closePath();ctx.fill();
+		ctx.fillStyle='#254b58';ctx.beginPath();ctx.arc(8,-5,2,0,Math.PI*2);ctx.fill();
+		ctx.restore();
+	}
+	function drawLandmarks(){
+		const checkpoints=[850,1700,2550,journey];
+		checkpoints.forEach((cp,i)=>{const x=w*.24+(cp-travel);if(x>-40&&x<w+40){ctx.strokeStyle='rgba(255,255,235,.45)';ctx.setLineDash([3,8]);ctx.beginPath();ctx.moveTo(x,90);ctx.lineTo(x,h*.84);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#fff9dc';ctx.font='11px system-ui';ctx.textAlign='center';ctx.fillText(i===3?'SANCTUARY':'RESTING PLACE',x,100);}});
+	}
+	function update(dt){
+		time+=dt; if(!run)return;
+		const speed=dt*.035; travel+=speed;
+		const upper=h*.16,lower=h*.79;
+		bird.y += (targetY-bird.y)*Math.min(1,dt*.008);
+		bird.y=clamp(bird.y,upper,lower);
+		bird.flash=Math.max(0,bird.flash-dt);
+		makeObjects();
+		for(const o of objects){
+			if(o.got)continue;
+			const x=w*.24+(o.x-travel), y=o.y+Math.sin(time*1.6+o.phase)*7;
+			const dx=x-w*.24,dy=y-bird.y,dist=Math.hypot(dx,dy);
+			if(dist<o.r+bird.r){
+				if(o.kind==='cloud'){targetY=clamp(targetY+(dy<0?65:-65),upper,lower);bird.flash=450;}
+				else {o.got=true;if(o.kind==='seed'){seedCount++;seedLabel.textContent=seedCount;}else{flock++;flockLabel.textContent=flock;}}
+			}
+		}
+		objects=objects.filter(o=>!o.got&&o.x>travel-100);
+		progressFill.style.width=`${Math.min(100,travel/journey*100)}%`;
+		if(travel>=journey)finish();
+	}
+	function render(dt){
+		ctx.clearRect(0,0,w,h);drawBackground(dt);drawLandmarks();
+		for(const o of objects)drawObject(o);
+		// Warm glow around the guide, fading after a bump in the wind
+		const x=w*.24,y=bird.y;
+		ctx.fillStyle=bird.flash>0?'rgba(255,232,174,.22)':'rgba(255,242,190,.16)';ctx.beginPath();ctx.arc(x,y,34+Math.sin(time*4)*2,0,Math.PI*2);ctx.fill();
+		drawBird(x,y,1,'#fff2ce',time*6);
+		// Tiny flying companions gathered along the route
+		for(let i=1;i<Math.min(flock,8);i++)drawBird(x-22-(i-1)*17,y+Math.sin(time*2+i)*13,.42,'#fff8df',time*5+i);
+		requestAnimationFrame(loop);
+	}
+	function loop(now){const dt=Math.min(40,now-(last||now));last=now;update(dt);render(dt);}
+	function start(){
+		travel=0;time=0;seedCount=0;flock=1;objects=[];bird.y=h*.48;targetY=bird.y;bird.flash=0;complete=false;run=true;
+		seedLabel.textContent='0';flockLabel.textContent='1';progressFill.style.width='0%';intro.classList.add('hidden');ending.classList.add('hidden');hint.classList.add('show');setTimeout(()=>hint.classList.remove('show'),4300);
+	}
+	function finish(){if(complete)return;complete=true;run=false;document.getElementById('finalSeeds').textContent=`Seeds gathered: ${seedCount}`;document.getElementById('finalFlock').textContent=`Travelers welcomed: ${flock-1}`;document.getElementById('endingCopy').textContent=`The sanctuary is flourishing. ${flock} travelers arrived, and ${seedCount} seeds will help the next season take root.`;ending.classList.remove('hidden');}
+	function point(e){const r=canvas.getBoundingClientRect();targetY=clamp((e.clientY-r.top),h*.16,h*.79);}
+	canvas.addEventListener('pointermove',e=>{if(run)point(e);});canvas.addEventListener('pointerdown',e=>{if(run){canvas.setPointerCapture?.(e.pointerId);point(e);}});
+	window.addEventListener('keydown',e=>{if(!run)return;const k=e.key.toLowerCase();if(['arrowup','arrowdown','w','s'].includes(k)){e.preventDefault();targetY=clamp(targetY+((k==='arrowup'||k==='w')?-55:55),h*.16,h*.79);}});
+	document.getElementById('start').addEventListener('click',start);document.getElementById('again').addEventListener('click',start);
+	window.addEventListener('resize',resize);resize();requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

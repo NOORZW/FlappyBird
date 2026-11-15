@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="theme-color" content="#101c35">
+<title>Common Skies — a little game about making room</title>
+<style>
+	:root { color-scheme: dark; --ink:#f4f3e9; --muted:#aebbd0; --gold:#ffd978; --mint:#9ae5c0; }
+	* { box-sizing:border-box; }
+	html,body { margin:0; width:100%; height:100%; overflow:hidden; background:#101c35; font-family:ui-rounded,"Avenir Next",Avenir,system-ui,sans-serif; color:var(--ink); }
+	body { min-height:100svh; }
+	#game { position:relative; width:100%; height:100%; overflow:hidden; isolation:isolate; }
+	canvas { position:absolute; inset:0; width:100%; height:100%; display:block; }
+	.topbar { position:absolute; z-index:2; top:0; left:0; right:0; padding:clamp(16px,3vw,30px) clamp(18px,5vw,64px); display:flex; align-items:flex-start; justify-content:space-between; pointer-events:none; }
+	.brand { display:flex; align-items:center; gap:11px; text-shadow:0 2px 14px #101c3580; }
+	.brand-mark { width:34px; height:34px; display:grid; place-items:center; border:1px solid #ffffff50; border-radius:50%; color:var(--gold); font-size:19px; }
+	.brand-name { font-size:12px; font-weight:800; letter-spacing:.19em; text-transform:uppercase; }
+	.brand-note { margin-top:3px; color:#d5dced; font-size:10px; letter-spacing:.08em; }
+	.scorebox { text-align:right; text-shadow:0 2px 14px #101c3580; }
+	#score { font-size:clamp(28px,5vw,42px); line-height:1; font-weight:750; font-variant-numeric:tabular-nums; }
+	.score-label { margin-top:5px; font-size:10px; letter-spacing:.17em; color:#d5dced; text-transform:uppercase; }
+	.harmony { position:absolute; z-index:2; top:88px; left:50%; transform:translateX(-50%); width:min(220px,42vw); pointer-events:none; }
+	.harmony-label { display:flex; justify-content:space-between; margin-bottom:7px; color:#e4e9f1; font-size:9px; font-weight:700; letter-spacing:.16em; text-transform:uppercase; }
+	.meter { height:5px; border-radius:9px; overflow:hidden; background:#ffffff30; box-shadow:0 1px 5px #07132650; }
+	#meterFill { height:100%; width:0%; border-radius:inherit; background:linear-gradient(90deg,#97e5c1,#ffe18b); transition:width .35s ease; }
+	.panel { position:absolute; z-index:3; left:50%; top:50%; transform:translate(-50%,-50%); width:min(440px,calc(100% - 34px)); padding:clamp(24px,5vw,42px); text-align:center; border:1px solid #ffffff30; border-radius:25px; background:linear-gradient(145deg,#172943ed,#18263ce8); box-shadow:0 25px 80px #06102070; backdrop-filter:blur(16px); transition:opacity .25s, transform .25s; }
+	.panel.hidden { opacity:0; transform:translate(-50%,-46%) scale(.97); pointer-events:none; }
+	.eyebrow { color:var(--mint); font-size:10px; font-weight:800; letter-spacing:.21em; text-transform:uppercase; }
+	h1 { margin:12px 0 12px; font-size:clamp(31px,7vw,47px); line-height:.99; letter-spacing:-.055em; font-weight:750; }
+	.description { max-width:320px; margin:0 auto 23px; color:#cad4e1; font-size:14px; line-height:1.6; }
+	.how { display:flex; align-items:center; justify-content:center; gap:9px; margin:0 auto 24px; color:#aebbd0; font-size:11px; }
+	.key { padding:5px 8px; border:1px solid #ffffff38; border-radius:7px; color:#fff; font-size:10px; }
+	button { appearance:none; border:0; border-radius:999px; padding:13px 25px; background:var(--gold); color:#18263c; font:800 12px inherit; font-size:12px; font-weight:850; letter-spacing:.11em; text-transform:uppercase; cursor:pointer; box-shadow:0 5px 22px #ffd97830; transition:transform .15s,filter .15s; }
+	button:hover { transform:translateY(-2px); filter:brightness(1.06); }
+	button:active { transform:translateY(1px); }
+	.footer-note { position:absolute; z-index:2; left:50%; bottom:clamp(14px,3vw,25px); transform:translateX(-50%); width:max-content; max-width:90%; color:#e0e6efb0; text-align:center; font-size:10px; letter-spacing:.04em; pointer-events:none; text-shadow:0 1px 8px #101c35; }
+	@media(max-height:560px) { .harmony { top:67px; } .panel { padding:20px 25px; } h1 { font-size:34px; margin:8px 0; } .description { margin-bottom:13px; font-size:12px; } .how { margin-bottom:13px; } }
+	@media(prefers-reduced-motion:reduce) { *,*::before,*::after { scroll-behavior:auto!important; transition:none!important; } }
+</style>
+</head>
+<body>
+<main id="game" aria-label="Common Skies game">
+	<canvas id="sky" aria-label="Fly through a shared sky, gather lights, and avoid the walls"></canvas>
+	<header class="topbar">
+		<div class="brand"><div class="brand-mark" aria-hidden="true">✳</div><div><div class="brand-name">Common Skies</div><div class="brand-note">a little game about making room</div></div></div>
+		<div class="scorebox"><div id="score">0</div><div class="score-label">lights carried</div></div>
+	</header>
+	<div class="harmony" aria-label="Harmony meter"><div class="harmony-label"><span>Shared harmony</span><span id="harmonyText">0%</span></div><div class="meter"><div id="meterFill"></div></div></div>
+	<section class="panel" id="panel">
+		<div class="eyebrow" id="eyebrow">A gentler kind of flight</div>
+		<h1 id="headline">The sky is<br>big enough.</h1>
+		<p class="description" id="description">Guide a small bird through a divided world. Gather the lights people leave for one another—and help the sky find its color again.</p>
+		<div class="how"><span class="key">SPACE</span><span>or</span><span class="key">TAP</span><span>to rise</span></div>
+		<button id="playButton" type="button">Begin together</button>
+	</section>
+	<div class="footer-note" id="hint">Every light you carry makes the passage a little kinder.</div>
+</main>
+<script>
+(() => {
+	const canvas = document.getElementById('sky');
+	const ctx = canvas.getContext('2d');
+	const panel = document.getElementById('panel');
+	const scoreEl = document.getElementById('score');
+	const fillEl = document.getElementById('meterFill');
+	const harmonyEl = document.getElementById('harmonyText');
+	const W = { value: innerWidth }, H = { value: innerHeight };
+	let dpr = 1, state = 'ready', last = 0, time = 0, score = 0, harmony = 0;
+	let bird, walls = [], motes = [], particles = [], clouds = [], spawnClock = 0, best = 0;
+	try { best = +(localStorage.getItem('commonSkiesBest') || 0); } catch (_) {}
+	const rand = (a,b) => a + Math.random() * (b-a);
+	const clamp = (n,a,b) => Math.max(a,Math.min(b,n));
+
+	function resize() {
+		W.value = innerWidth; H.value = innerHeight; dpr = Math.min(devicePixelRatio || 1, 2);
+		canvas.width = Math.round(W.value*dpr); canvas.height = Math.round(H.value*dpr);
+		ctx.setTransform(dpr,0,0,dpr,0,0);
+		if (bird && state !== 'playing') bird.y = H.value*.46;
+		clouds = Array.from({length:7},(_,i)=>({x:i*W.value/6+rand(-30,30),y:rand(H.value*.14,H.value*.75),s:rand(.6,1.35),a:rand(.07,.17)}));
+	}
+	function reset() {
+		score = 0; harmony = 0; walls = []; motes = []; particles = []; spawnClock = .65;
+		bird = {x:W.value*.26,y:H.value*.46,vy:0,angle:0,flap:0};
+		scoreEl.textContent = '0'; fillEl.style.width = '0%'; harmonyEl.textContent = '0%';
+	}
+	function begin() {
+		reset(); state='playing'; panel.classList.add('hidden'); document.getElementById('hint').textContent='Space or tap to rise • Find the golden light';
+		flap();
+	}
+	function flap() { if (state !== 'playing') return; bird.vy = -425; bird.flap=1; burst(bird.x-8,bird.y,3,'#fff0b0'); }
+	function burst(x,y,n,color) { for(let i=0;i<n;i++) particles.push({x,y,vx:rand(-85,45),vy:rand(-100,55),life:rand(.35,.8),max:.8,r:rand(1.5,3.8),color}); }
+	function addWall() {
+		const gap = clamp(H.value*.31 + harmony*.34, 145, 255);
+		const edge = Math.max(100,H.value*.14);
+		const center = rand(edge+gap/2, H.value-edge-gap/2);
+		const x = W.value+35;
+		walls.push({x,center,gap,passed:false,seeded:false,phase:rand(0,6)});
+		motes.push({x:x+52,y:center,r:10,got:false,phase:rand(0,6)});
+	}
+	function endGame() {
+		if(state!=='playing')return;
+		state='ended';
+		if(score>best){best=score;try{localStorage.setItem('commonSkiesBest',best)}catch(_){}}
+		document.getElementById('eyebrow').textContent='A sky made brighter';
+		document.getElementById('headline').innerHTML=score>=8?'Look what we<br>made together.':'There is always<br>another way through.';
+		document.getElementById('description').textContent=`You carried ${score} ${score===1?'light':'lights'} into the open sky. ${best>0?`Your shared-sky best is ${best}.`:''} The journey continues whenever you do.`;
+		document.getElementById('playButton').textContent='Fly again'; panel.classList.remove('hidden');
+		document.getElementById('hint').textContent='A small kindness can change the shape of a whole sky.';
+	}
+	function input(e) { if(e && e.type==='keydown' && !['Space','ArrowUp','KeyW'].includes(e.code))return; if(e && e.type==='keydown')e.preventDefault(); if(state==='ready'||state==='ended')begin();else flap(); }
+	document.addEventListener('keydown',input);
+	canvas.addEventListener('pointerdown',e=>{e.preventDefault();input();});
+	document.getElementById('playButton').addEventListener('click',begin);
+	window.addEventListener('resize',resize);
+	resize(); reset();
+
+	function drawBackground(dt) {
+		const h=H.value,w=W.value;
+		const light=clamp(harmony/100,0,1);
+		const sky=ctx.createLinearGradient(0,0,0,h);
+		sky.addColorStop(0,`rgb(${Math.round(15+25*light)},${Math.round(28+46*light)},${Math.round(55+57*light)})`);
+		sky.addColorStop(.58,`rgb(${Math.round(38+69*light)},${Math.round(62+77*light)},${Math.round(91+47*light)})`);
+		sky.addColorStop(1,`rgb(${Math.round(92+79*light)},${Math.round(111+74*light)},${Math.round(127+42*light)})`);
+		ctx.fillStyle=sky;ctx.fillRect(0,0,w,h);
+		const sunX=w*.77,sunY=h*.27,sunR=Math.min(w,h)*(.075+.035*light);
+		const glow=ctx.createRadialGradient(sunX,sunY,2,sunX,sunY,sunR*2.7);
+		glow.addColorStop(0,`rgba(255,230,167,${.35+.24*light})`);glow.addColorStop(1,'rgba(255,220,165,0)');
+		ctx.fillStyle=glow;ctx.fillRect(sunX-sunR*3,sunY-sunR*3,sunR*6,sunR*6);
+		ctx.beginPath();ctx.arc(sunX,sunY,sunR,0,Math.PI*2);ctx.fillStyle=`rgba(255,231,177,${.56+.32*light})`;ctx.fill();
+		// Distant, soft clouds
+		clouds.forEach(c=>{c.x-=dt*7;if(c.x<-120)c.x=w+80;ctx.save();ctx.globalAlpha=c.a+light*.1;ctx.fillStyle='#f1eddf';ctx.beginPath();ctx.ellipse(c.x,c.y,68*c.s,13*c.s,0,0,Math.PI*2);ctx.ellipse(c.x-25*c.s,c.y-8*c.s,25*c.s,17*c.s,0,0,Math.PI*2);ctx.ellipse(c.x+7*c.s,c.y-14*c.s,34*c.s,23*c.s,0,0,Math.PI*2);ctx.ellipse(c.x+39*c.s,c.y-4*c.s,23*c.s,15*c.s,0,0,Math.PI*2);ctx.fill();ctx.restore();});
+		// Two distant neighborhoods, with warm windows joining as harmony rises
+		const base=h*.84;
+		for(let layer=0;layer<2;layer++){
+			const y=base+layer*25,step=layer?58:45,offset=((time*(layer?9:15))%step);
+			ctx.fillStyle=layer?'#182a3e':'#203449';ctx.beginPath();ctx.moveTo(0,h);ctx.lineTo(0,y);
+			for(let x=-step-offset;x<w+step;x+=step){const bh=25+((Math.sin(x*.17+layer*5)+1)*.5)*75;ctx.lineTo(x,y-bh);ctx.lineTo(x+step*.78,y-bh);ctx.lineTo(x+step*.78,y);}
+			ctx.lineTo(w,h);ctx.closePath();ctx.fill();
+			for(let x=10-offset;x<w;x+=step){const bh=25+((Math.sin((x+offset)*.17+layer*5)+1)*.5)*75;for(let j=0;j<3;j++){const wy=y-bh+15+j*17;if(wy<y-5){ctx.fillStyle=`rgba(255,220,143,${.12+light*.5})`;ctx.fillRect(x+j%2*9,wy,3,5);}}}
+		}
+		// Quiet threads of light between rooftops
+		ctx.strokeStyle=`rgba(255,222,147,${.05+light*.13})`;ctx.lineWidth=1;
+		for(let i=0;i<5;i++){const y=h*.74+i*8;ctx.beginPath();ctx.moveTo(0,y+Math.sin(time+i)*4);ctx.quadraticCurveTo(w*.5,y-10,w,y+Math.sin(time*.7+i)*4);ctx.stroke();}
+	}
+	function drawWall(o) {
+		const topH=o.center-o.gap/2, bottomY=o.center+o.gap/2;
+		const drawBlock=(y,height,top)=>{
+			if(height<=0)return;
+			const grad=ctx.createLinearGradient(o.x,0,o.x+48,0);grad.addColorStop(0,'#23384a');grad.addColorStop(.5,'#304b5a');grad.addColorStop(1,'#24394a');
+			ctx.fillStyle=grad;ctx.fillRect(o.x,y,48,height);
+			ctx.fillStyle='rgba(255,255,255,.07)';ctx.fillRect(o.x+6,y,2,height);
+			ctx.fillStyle='#9dc4a9';ctx.globalAlpha=.72;ctx.fillRect(o.x-4,top?y+height-5:y,56,5);ctx.globalAlpha=1;
+			ctx.fillStyle='rgba(255,218,139,.42)';
+			const sy=top?y+height-15:y+10;
+			for(let k=0;k<3;k++)ctx.fillRect(o.x+12+k*12,sy,4,2);
+		};
+		drawBlock(0,topH,true);drawBlock(bottomY,H.value-bottomY,false);
+		// A soft glow at the shared opening
+		const gl=ctx.createLinearGradient(o.x-12,0,o.x+60,0);gl.addColorStop(0,'rgba(255,220,145,0)');gl.addColorStop(.5,'rgba(255,220,145,.08)');gl.addColorStop(1,'rgba(255,220,145,0)');
+		ctx.fillStyle=gl;ctx.fillRect(o.x-12,topH,72,o.gap);
+	}
+	function drawBird(dt) {
+		const b=bird;
+		if(state==='ready'){b.y=H.value*.46+Math.sin(time*2.4)*7;b.angle=Math.sin(time*2)*.07;}
+		else if(state==='playing'){b.angle=clamp(b.vy/650,-.5,.75);b.flap=Math.max(0,b.flap-dt*3.5);}
+		ctx.save();ctx.translate(b.x,b.y);ctx.rotate(b.angle);
+		// tail
+		ctx.fillStyle='#efaa74';ctx.beginPath();ctx.moveTo(-14,1);ctx.lineTo(-23,-5);ctx.lineTo(-20,5);ctx.closePath();ctx.fill();
+		// body
+		ctx.shadowColor='rgba(255,220,145,.38)';ctx.shadowBlur=15;
+		ctx.fillStyle='#f6d991';ctx.beginPath();ctx.ellipse(0,0,18,14,0,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;
+		// wing
+		ctx.save();ctx.translate(-3,2);ctx.rotate(-.16+Math.sin(time*17)*.12-b.flap*.45);ctx.fillStyle='#eab975';ctx.beginPath();ctx.ellipse(0,0,10,6,0,0,Math.PI*2);ctx.fill();ctx.restore();
+		// beak, eye
+		ctx.fillStyle='#ef9f70';ctx.beginPath();ctx.moveTo(13,-3);ctx.lineTo(24,0);ctx.lineTo(13,4);ctx.closePath();ctx.fill();
+		ctx.fillStyle='#26344a';ctx.beginPath();ctx.arc(7,-5,2.1,0,Math.PI*2);ctx.fill();
+		ctx.restore();
+	}
+	function draw(dt) {
+		drawBackground(dt);
+		walls.forEach(o=>drawWall(o));
+		motes.forEach(m=>{if(m.got)return;const pulse=1+Math.sin(time*4+m.phase)*.15;ctx.save();ctx.shadowColor='#ffe39c';ctx.shadowBlur=18;ctx.fillStyle='#ffe39c';ctx.beginPath();ctx.arc(m.x,m.y,m.r*pulse,0,Math.PI*2);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#fff9dc';ctx.beginPath();ctx.arc(m.x,m.y,3,0,Math.PI*2);ctx.fill();ctx.restore();});
+		particles.forEach(p=>{ctx.globalAlpha=clamp(p.life/p.max,0,1);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill();});ctx.globalAlpha=1;
+		drawBird(dt);
+	}
+	function update(dt) {
+		time+=dt;
+		if(state==='playing'){
+			const b=bird, speed=clamp(190+score*2,190,255);
+			b.vy+=1230*dt;b.y+=b.vy*dt;
+			spawnClock-=dt;if(spawnClock<=0){addWall();spawnClock=clamp(1.72-speed/900,1.38,1.55);}
+			walls.forEach(o=>{
+				o.x-=speed*dt;
+				if(!o.passed&&o.x+48<b.x){o.passed=true;score++;scoreEl.textContent=score;harmony=clamp(harmony+8,0,100);updateHarmony();}
+				if(b.x+12>o.x&&b.x-12<o.x+48&&(b.y-10<o.center-o.gap/2||b.y+10>o.center+o.gap/2))endGame();
+			});
+			walls=walls.filter(o=>o.x>-70);
+			motes.forEach(m=>{m.x-=speed*dt;if(!m.got&&Math.hypot(m.x-b.x,m.y-b.y)<25){m.got=true;score++;scoreEl.textContent=score;harmony=clamp(harmony+12,0,100);updateHarmony();burst(m.x,m.y,13,'#ffe39c');}});
+			motes=motes.filter(m=>m.x>-30&&!m.got);
+			if(b.y<9||b.y>H.value-8)endGame();
+		}
+		particles.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=95*dt;});particles=particles.filter(p=>p.life>0);
+		draw(dt);requestAnimationFrame(frame);
+	}
+	function updateHarmony(){fillEl.style.width=harmony+'%';harmonyEl.textContent=Math.round(harmony)+'%';}
+	function frame(now){const dt=Math.min(.035,(now-last)/1000||0);last=now;update(dt);}
+	requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

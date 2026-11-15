@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skybound — Neon Flight</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700&display=swap');
+:root{color-scheme:dark;font-family:'Space Grotesk',system-ui,sans-serif}*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 25%,#24275a,#101328 58%,#090b16);color:#f5f7ff}.game{width:min(92vw,440px)}header{display:flex;justify-content:space-between;align-items:center;margin:0 6px 12px}.brand{font-weight:700;letter-spacing:.16em;font-size:14px}.brand span{color:#6af4ee}.best{font-size:11px;color:#aab1d0;letter-spacing:.12em;text-transform:uppercase}.best b{color:#75f3e7;font-size:15px;margin-left:6px}.board{position:relative;overflow:hidden;border:1px solid #aebeff40;border-radius:20px;box-shadow:0 25px 80px #0009,0 0 35px #6c73ff1c;background:#131832}canvas{display:block;width:100%;height:auto;touch-action:manipulation}.hud{position:absolute;inset:16px 0 auto;text-align:center;pointer-events:none;text-shadow:0 2px 12px #111}.score{font-size:42px;font-weight:700;line-height:1}.label{font-size:9px;letter-spacing:.22em;color:#d4daf3;margin-top:3px}.veil{position:absolute;inset:0;display:grid;place-items:center;padding:24px;background:#10142d35;transition:opacity .2s}.veil.hide{opacity:0;pointer-events:none}.card{width:100%;text-align:center;padding:26px 20px 21px;border:1px solid #ffffff2d;border-radius:18px;background:#11152be8;backdrop-filter:blur(12px);box-shadow:0 16px 45px #0006}.tag{color:#72f5e8;font-size:10px;font-weight:700;letter-spacing:.24em;text-transform:uppercase}.card h1{font-size:clamp(29px,8vw,40px);line-height:1;margin:10px 0;letter-spacing:-.06em}.card p{max-width:275px;margin:0 auto 20px;color:#b8c0dc;font-size:13px;line-height:1.55}button{border:0;border-radius:11px;padding:13px 23px;background:linear-gradient(110deg,#72f4eb,#9effc7);color:#101629;font:700 12px inherit;font-family:inherit;font-weight:700;letter-spacing:.12em;text-transform:uppercase;cursor:pointer;box-shadow:0 4px 24px #70f4e944}button:hover{filter:brightness(1.08);transform:translateY(-1px)}.hint,footer{text-align:center;color:#8f98b8;font-size:10px;letter-spacing:.12em}.hint{margin-top:15px}footer{margin-top:12px}@media(max-height:760px){.game{width:min(75vh,420px,92vw)}}
+</style>
+</head>
+<body>
+<main class="game">
+ <header><div class="brand"><span>✦</span> SKYBOUND</div><div class="best">Best <b id="best">0</b></div></header>
+ <section class="board" aria-label="Skybound game">
+  <canvas id="c" width="420" height="650" aria-label="Fly between the neon gates"></canvas>
+  <div class="hud"><div class="score" id="score">0</div><div class="label">GATES CLEARED</div></div>
+  <div class="veil" id="veil"><div class="card"><div class="tag" id="tag">A tiny arcade adventure</div><h1 id="title">Find your<br>flight path.</h1><p id="message">Tap, click, or press Space to flap. Slip through the glowing gates and see how far you can fly.</p><button id="play">Start flying</button><div class="hint">SPACE · CLICK · TAP TO FLAP</div></div></div>
+ </section><footer>DODGE THE GATES &nbsp;·&nbsp; CHASE YOUR HIGH SCORE</footer>
+</main>
+<script>
+(()=>{
+ const c=document.querySelector('#c'),x=c.getContext('2d'),W=c.width,H=c.height,veil=document.querySelector('#veil');
+ const scoreNode=document.querySelector('#score'),bestNode=document.querySelector('#best');
+ let best=0;try{best=+(localStorage.skyboundBest||0)}catch(e){}bestNode.textContent=best;
+ let mode='ready',score=0,time=0,last=0,bird,gates,stars,trail=[];
+ const randGap=()=>170+Math.random()*(H-340);
+ stars=Array.from({length:75},()=>({x:Math.random()*W,y:Math.random()*H,r:.4+Math.random()*1.3,p:Math.random()*7}));
+ function reset(){score=0;scoreNode.textContent=0;bird={x:112,y:H*.48,v:0,angle:0};gates=[{x:W+30,y:randGap(),gap:174,passed:false}];trail=[];time=0}
+ reset();
+ function start(){if(mode==='over')reset();mode='play';veil.classList.add('hide');flap()}
+ function flap(){if(mode!=='play')return;bird.v=-390;for(let i=0;i<5;i++)trail.push({x:bird.x-12,y:bird.y+(Math.random()-.5)*12,vx:-45-Math.random()*85,life:.35})}
+ function input(){if(mode==='ready'||mode==='over')start();else flap()}
+ document.querySelector('#play').addEventListener('click',start);
+ c.addEventListener('pointerdown',e=>{e.preventDefault();input()});
+ addEventListener('keydown',e=>{if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();input()}});
+ function finish(){if(mode!=='play')return;mode='over';if(score>best){best=score;bestNode.textContent=best;try{localStorage.skyboundBest=best}catch(e){}}
+  document.querySelector('#tag').textContent='Flight complete';document.querySelector('#title').innerHTML=`Score: ${score}<br><span style="color:#72f4eb">${score===best&&score>0?'New best!':'Ready again?'}</span>`;
+  document.querySelector('#message').textContent='The sky is yours. Take a breath and give it another go.';document.querySelector('#play').textContent='Fly again';veil.classList.remove('hide')}
+ function background(t){let g=x.createLinearGradient(0,0,0,H);g.addColorStop(0,'#171c40');g.addColorStop(.7,'#171a35');g.addColorStop(1,'#101629');x.fillStyle=g;x.fillRect(0,0,W,H);
+  stars.forEach(s=>{x.globalAlpha=.35+(Math.sin(t+s.p)+1)*.25;x.fillStyle='#d9edff';x.beginPath();x.arc(s.x,(s.y+t*(7+s.r*3))%H,s.r,0,7);x.fill()});x.globalAlpha=1;
+  for(let i=0;i<12;i++){let bx=i*42-(t*13%42),bh=65+(i*37%105);x.fillStyle='#22294b';x.fillRect(bx,H-bh,34,bh);for(let wy=H-bh+12;wy<H-10;wy+=19)for(let wx=bx+7;wx<bx+30;wx+=12){x.fillStyle=(i+Math.floor(wy))%2?'#7ceaff26':'#ffd77b20';x.fillRect(wx,wy,3,5)}}
+  x.fillStyle='#72f4eb';x.fillRect(0,H-4,W,4)}
+ function gate(a){let top=a.y-a.gap/2,bot=a.y+a.gap/2;
+  const pipe=(y,h,bottom)=>{let gr=x.createLinearGradient(a.x,0,a.x+65,0);gr.addColorStop(0,'#4945b9');gr.addColorStop(.2,'#8a79ff');gr.addColorStop(.55,'#5753d7');gr.addColorStop(1,'#29295f');x.shadowColor='#8278ff';x.shadowBlur=15;x.fillStyle=gr;x.beginPath();x.roundRect(a.x,y,65,h,8);x.fill();x.shadowBlur=0;x.fillStyle='#b8adff';x.beginPath();x.roundRect(a.x-5,bottom?y+h-17:y,75,17,5);x.fill();x.fillStyle='#a5fbff';x.fillRect(a.x-3,bottom?y+h-17:y,71,2)};
+  pipe(0,top,true);pipe(bot,H-bot,false)}
+ function drawBird(){x.save();x.translate(bird.x,bird.y);x.rotate(bird.angle);x.shadowColor='#65f4ff';x.shadowBlur=20;let gr=x.createLinearGradient(-18,-12,18,14);gr.addColorStop(0,'#c7fff0');gr.addColorStop(.5,'#5de5ff');gr.addColorStop(1,'#7983ff');x.fillStyle=gr;x.beginPath();x.ellipse(0,0,19,14,0,0,7);x.fill();x.shadowBlur=0;x.fillStyle='#e2ffff';x.beginPath();x.ellipse(-5,3+Math.sin(time*18)*2,9,6,-.2,0,7);x.fill();x.fillStyle='white';x.beginPath();x.arc(9,-5,5,0,7);x.fill();x.fillStyle='#192044';x.beginPath();x.arc(10,-5,2,0,7);x.fill();x.fillStyle='#ffae75';x.beginPath();x.moveTo(16,0);x.lineTo(27,4);x.lineTo(16,7);x.fill();x.restore()}
+ function update(dt){time+=dt;trail.forEach(p=>{p.x+=p.vx*dt;p.life-=dt});trail=trail.filter(p=>p.life>0);if(mode!=='play'){if(mode==='ready')bird.y=H*.48+Math.sin(time*2.5)*8;return}
+  bird.v+=1200*dt;bird.y+=bird.v*dt;bird.angle=Math.max(-.45,Math.min(.9,bird.v/570));let speed=180+Math.min(score*3,75);
+  gates.forEach(a=>{a.x-=speed*dt;if(!a.passed&&a.x+65<bird.x){a.passed=true;score++;scoreNode.textContent=score}if(bird.x+13>a.x&&bird.x-13<a.x+65&&(bird.y-10<a.y-a.gap/2||bird.y+10>a.y+a.gap/2))finish()});
+  if(gates[gates.length-1].x<W-205)gates.push({x:W+20,y:randGap(),gap:Math.max(145,174-score),passed:false});gates=gates.filter(a=>a.x>-80);if(bird.y<8||bird.y>H-8)finish()}
+ function draw(t){background(t);gates.forEach(gate);trail.forEach(p=>{x.globalAlpha=p.life/.35;x.fillStyle='#8ffaff';x.beginPath();x.arc(p.x,p.y,2,0,7);x.fill()});x.globalAlpha=1;drawBird()}
+ function loop(now){let dt=Math.min((now-last)/1000||0,.033);last=now;update(dt);draw(now/1000);requestAnimationFrame(loop)}requestAnimationFrame(loop)
+})();
+</script>
+</body>
+</html>
