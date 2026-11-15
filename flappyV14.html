@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Blocky Bird — Minecraft Flappy</title>
+	<style>
+		* { box-sizing: border-box; }
+		html, body { margin: 0; min-height: 100%; }
+		body {
+			display: grid; place-items: center; min-height: 100vh; overflow: hidden;
+			background: radial-gradient(ellipse at center, #456845 0%, #182b25 75%);
+			color: #fff; font-family: "Courier New", monospace;
+		}
+		.game-wrap { position: relative; width: min(100vw, 460px); }
+		canvas {
+			display: block; width: 100%; height: auto; aspect-ratio: 420 / 640;
+			border: 5px solid #34231a; box-shadow: 0 0 0 5px #796044, 0 18px 55px #0009;
+			image-rendering: pixelated; background: #79c9ed;
+		}
+		.hud { position: absolute; top: 16px; left: 0; right: 0; text-align: center; pointer-events: none; text-shadow: 3px 3px #332015; }
+		.title { font-size: clamp(17px, 5vw, 23px); font-weight: 900; color: #fff4bb; letter-spacing: 1px; }
+		.score { margin-top: 7px; font-size: 30px; font-weight: bold; }
+		.overlay {
+			position: absolute; inset: 0; display: grid; place-items: center; padding: 22px;
+			background: #17241d55; text-align: center;
+		}
+		.card { max-width: 310px; padding: 18px 20px; background: #34251eeF; border: 4px solid #a87b45; box-shadow: 0 0 0 4px #39271d; }
+		.card h1 { margin: 0 0 10px; color: #f9d66b; font-size: 24px; text-shadow: 3px 3px #593a1d; }
+		.card p { margin: 8px 0 14px; line-height: 1.5; font-size: 14px; }
+		button { border: 3px solid #f5d276; background: #5b9b36; color: white; padding: 10px 18px; font: bold 16px "Courier New", monospace; cursor: pointer; box-shadow: 0 4px #315b27; }
+		button:hover { background: #70b845; transform: translateY(-1px); }
+		.hidden { display: none; }
+		.hint { margin-top: 10px; font-size: 11px; color: #ded0ab; }
+	</style>
+</head>
+<body>
+	<main class="game-wrap" aria-label="Blocky Bird game">
+		<canvas id="game" width="420" height="640" aria-label="Flap through the Minecraft-style block pillars"></canvas>
+		<div class="hud"><div class="title">BLOCKY BIRD</div><div class="score" id="score">0</div></div>
+		<section class="overlay" id="overlay">
+			<div class="card">
+				<h1 id="message-title">BLOCKY BIRD</h1>
+				<p id="message">Help Steve’s little bird fly through the grass-and-dirt pillars!</p>
+				<button id="start">PLAY</button>
+				<div class="hint">SPACE / CLICK / TAP to flap</div>
+			</div>
+		</section>
+	</main>
+	<script>
+		(() => {
+			const canvas = document.getElementById('game');
+			const ctx = canvas.getContext('2d');
+			const overlay = document.getElementById('overlay');
+			const scoreEl = document.getElementById('score');
+			const button = document.getElementById('start');
+			const titleEl = document.getElementById('message-title');
+			const messageEl = document.getElementById('message');
+			const W = canvas.width, H = canvas.height, groundY = 570;
+			let bird, pipes, score, state = 'ready', frame = 0, best = Number(localStorage.getItem('blockyBirdBest') || 0);
+
+			function rect(x, y, w, h, color) { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h)); }
+			function drawBackground() {
+				rect(0, 0, W, H, '#79c9ed');
+				// distant blocky clouds
+				[[35,90,82,25],[275,130,100,24],[180,55,50,18]].forEach(([x,y,w,h]) => {
+					rect(x,y,w,h,'#f4fbef'); rect(x+12,y-10,w-28,h,'#fff'); rect(x+22,y+h,w-40,8,'#d9f0e9');
+				});
+				// square sun
+				rect(326,62,54,54,'#ffe36b'); rect(335,54,38,8,'#fff09a'); rect(372,72,8,36,'#fff09a');
+				// far hills and blocky trees
+				rect(0,375,W,60,'#8dbd66'); rect(0,405,95,54,'#73a94e'); rect(135,392,120,67,'#82b357'); rect(300,380,120,79,'#75a64c');
+				[[42,342],[80,365],[188,350],[345,335],[380,362]].forEach(([x,y]) => {
+					rect(x+11,y+25,11,45,'#765035'); rect(x,y+8,34,32,'#397b3c'); rect(x+7,y,25,24,'#4e9646'); rect(x-5,y+18,12,22,'#4b8c3d');
+				});
+				// grass-block ground
+				rect(0,groundY,W,H-groundY,'#765038'); rect(0,groundY,W,17,'#5da83f');
+				rect(0,groundY+17,W,7,'#43832f');
+				for (let x=0; x<W; x+=36) {
+					rect(x,groundY+30,17,12,'#8a6040'); rect(x+20,groundY+63,12,10,'#60432f');
+					rect(x+8,groundY+110,16,13,'#8a6040'); rect(x+25,groundY+43,7,8,'#61432f');
+				}
+			}
+			function drawPillar(p) {
+				const gapTop = p.gapY - p.gap / 2, gapBottom = p.gapY + p.gap / 2;
+				const parts = [[p.x,0, p.w,gapTop],[p.x,gapBottom,p.w,groundY-gapBottom]];
+				parts.forEach(([x,y,w,h]) => {
+					if (h <= 0) return;
+					rect(x,y,w,h,'#765037'); rect(x+6,y,w-12,h,'#855a39');
+					for(let yy=y+16; yy<y+h; yy+=32) {
+						rect(x+4,yy,w-8,4,'#63442f'); rect(x+12,yy+9,8,10,'#936342');
+						rect(x+w-18,yy+20,10,7,'#65432e');
+					}
+					const capY = y === 0 ? h-22 : y;
+					rect(x-7,capY,w+14,22,'#4d9838'); rect(x-7,capY,w+14,6,'#70b94a');
+					rect(x+2,capY+7,10,5,'#3f7f31'); rect(x+w-12,capY+12,10,6,'#3f7f31');
+					rect(x-7,capY+20,w+14,5,'#68492f');
+				});
+			}
+			function drawBird() {
+				const bob = state === 'ready' ? Math.sin(frame/9)*5 : 0;
+				const x=100, y=bird.y+bob;
+				ctx.save(); ctx.translate(x,y); ctx.rotate(Math.max(-.35,Math.min(.65,bird.v*.055)));
+				// blocky parrot-like bird
+				rect(-17,-13,34,29,'#e6b62e'); rect(-12,-19,25,9,'#f4d24b');
+				rect(-12,10,27,8,'#c8871e'); rect(-21,-7,8,14,'#dc9d25');
+				rect(8,-18,10,9,'#e7e3d1'); rect(13,-15,4,5,'#202020');
+				rect(16,-8,13,7,'#ef7d2c'); rect(18,-2,9,4,'#c84d24');
+				rect(-13,15,7,8,'#d4482b'); rect(-2,15,7,8,'#d4482b');
+				rect(-12,-5,9,7,'#f4d24b');
+				ctx.restore();
+			}
+			function draw() {
+				drawBackground();
+				pipes.forEach(drawPillar);
+				drawBird();
+			}
+			function reset() {
+				bird={y:270,v:0}; pipes=[]; score=0; frame=0; scoreEl.textContent='0';
+				for(let i=0;i<3;i++) pipes.push({x:W+70+i*205,w:62,gap:170,gapY:235+Math.random()*180,passed:false});
+			}
+			function start() { reset(); state='playing'; overlay.classList.add('hidden'); flap(); }
+			function flap() { if(state==='ready') { start(); return; } if(state==='playing') bird.v=-6.1; }
+			function endGame() {
+				state='over';
+				if(score>best) { best=score; localStorage.setItem('blockyBirdBest',String(best)); }
+				titleEl.textContent='GAME OVER';
+				messageEl.textContent=`Score: ${score}  •  Best: ${best}`;
+				button.textContent='TRY AGAIN'; overlay.classList.remove('hidden');
+			}
+			function tick() {
+				frame++;
+				if(state==='playing') {
+					bird.v+=.31; bird.y+=bird.v;
+					pipes.forEach(p=>{ p.x-=2.7; if(!p.passed && p.x+p.w<100) { p.passed=true; score++; scoreEl.textContent=score; } });
+					if(pipes[0].x+ pipes[0].w < -10) { pipes.shift(); pipes.push({x:pipes[pipes.length-1].x+205,w:62,gap:170,gapY:220+Math.random()*190,passed:false}); }
+					const p=pipes.find(p=>100+15>p.x && 100-15<p.x+p.w);
+					if(bird.y+12>groundY || bird.y-12<0 || (p && (bird.y-12 < p.gapY-p.gap/2 || bird.y+12 > p.gapY+p.gap/2))) endGame();
+				}
+				draw(); requestAnimationFrame(tick);
+			}
+			button.addEventListener('click', start);
+			canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); flap(); });
+			window.addEventListener('keydown', e=>{ if(e.code==='Space' || e.code==='ArrowUp') { e.preventDefault(); flap(); } });
+			reset(); tick();
+		})();
+	</script>
+</body>
+</html>

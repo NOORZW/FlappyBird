@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Pixel Flap</title>
+	<style>
+		* { box-sizing: border-box; }
+		body { margin: 0; min-height: 100vh; display: grid; place-items: center; overflow: hidden; background: #101b32; color: #fff0a8; font-family: "Courier New", monospace; }
+		main { width: min(94vw, 390px); text-align: center; }
+		h1 { margin: 0 0 18px; color: #ffe66d; font-size: 25px; letter-spacing: 3px; text-shadow: 3px 3px #a84c62; }
+		.frame { position: relative; padding: 9px; border: 5px solid #f3c75b; border-radius: 7px; background: #49304a; box-shadow: 0 0 0 5px #8d4b5a, 0 13px 0 #33263d, 0 24px 50px #0009; }
+		canvas { display: block; width: 100%; aspect-ratio: 360 / 560; image-rendering: pixelated; background: #70c5ce; }
+		.hud { position: absolute; z-index: 1; inset: 18px 17px auto; display: flex; justify-content: space-between; color: white; font-weight: bold; font-size: 12px; text-shadow: 2px 2px #354158; }
+		.scanlines { pointer-events: none; position: absolute; inset: 9px; opacity: .11; background: repeating-linear-gradient(transparent 0 3px, #132134 4px 5px); }
+		p { margin: 24px 0 0; color: #b6dce0; font-size: 12px; line-height: 1.8; }
+		strong { color: #ffe66d; }
+		@media (max-height: 700px) { main { width: min(72vh, 350px); } h1 { margin-bottom: 10px; } p { margin-top: 15px; } }
+	</style>
+</head>
+<body>
+	<main>
+		<h1>PIXEL FLAP</h1>
+		<div class="frame">
+			<canvas id="game" width="360" height="560" aria-label="Pixel Flap game"></canvas>
+			<div class="hud"><span>SCORE <span id="score">0</span></span><span>BEST <span id="best">0</span></span></div>
+			<div class="scanlines"></div>
+		</div>
+		<p><strong>SPACE / CLICK</strong> TO FLAP<br>DON'T HIT THE PIPES!</p>
+	</main>
+	<script>
+		(() => {
+			const canvas = document.getElementById('game');
+			const ctx = canvas.getContext('2d');
+			const scoreDisplay = document.getElementById('score');
+			const bestDisplay = document.getElementById('best');
+			const W = canvas.width, H = canvas.height, groundY = 500;
+			const pixel = (x, y, w, h, color) => { ctx.fillStyle = color; ctx.fillRect(Math.round(x), Math.round(y), w, h); };
+			let best = 0;
+			try { best = Number(localStorage.getItem('pixelFlapBest')) || 0; } catch (_) {}
+			bestDisplay.textContent = best;
+			let bird, pipes, score, state, tick = 0, groundShift = 0;
+
+			function reset() {
+				bird = { x: 82, y: 250, velocity: 0, tilt: 0 };
+				pipes = []; score = 0; scoreDisplay.textContent = score; state = 'ready';
+				addPipe(W + 35);
+			}
+			function addPipe(x) { pipes.push({ x, top: 72 + Math.random() * 190, gap: 150, scored: false }); }
+			function flap() {
+				if (state === 'over') reset();
+				state = 'playing'; bird.velocity = -5.2;
+			}
+			window.addEventListener('keydown', event => {
+				if (event.code === 'Space' || event.code === 'ArrowUp') { event.preventDefault(); flap(); }
+			});
+			canvas.addEventListener('pointerdown', flap);
+
+			function background() {
+				pixel(0, 0, W, H, '#70c5ce');
+				// Floating blocky clouds
+				[[25, 100, 1], [215, 145, .8], [135, 47, .65]].forEach(([x, y, scale]) => {
+					const cx = ((x - tick * .22) % 420 + 420) % 420 - 25;
+					pixel(cx + 9 * scale, y, 34 * scale, 9 * scale, '#a8e3d9');
+					pixel(cx, y + 8 * scale, 55 * scale, 11 * scale, '#a8e3d9');
+					pixel(cx + 12 * scale, y - 5 * scale, 18 * scale, 9 * scale, '#a8e3d9');
+				});
+				pixel(0, 387, W, 24, '#91d47b');
+				for (let x = -24; x < W + 30; x += 48) {
+					const shift = tick * .45 % 48;
+					pixel(x - shift, 370, 28, 17, '#91d47b'); pixel(x + 10 - shift, 361, 22, 10, '#91d47b');
+				}
+			}
+			function drawPipe(pipe) {
+				const bottom = pipe.top + pipe.gap;
+				pixel(pipe.x, 0, 48, pipe.top - 17, '#54b84c');
+				pixel(pipe.x - 5, pipe.top - 20, 58, 20, '#67cf55');
+				pixel(pipe.x + 7, 0, 7, pipe.top - 20, '#9be66b'); pixel(pipe.x + 35, 0, 6, pipe.top - 20, '#348e48');
+				pixel(pipe.x, bottom + 17, 48, groundY - bottom - 17, '#54b84c');
+				pixel(pipe.x - 5, bottom, 58, 20, '#67cf55');
+				pixel(pipe.x + 7, bottom + 20, 7, groundY - bottom - 20, '#9be66b'); pixel(pipe.x + 35, bottom + 20, 6, groundY - bottom - 20, '#348e48');
+				for (let y = 35; y < pipe.top - 24; y += 42) pixel(pipe.x + 20, y, 8, 8, '#45a94c');
+				for (let y = bottom + 40; y < groundY - 8; y += 42) pixel(pipe.x + 20, y, 8, 8, '#45a94c');
+			}
+			function drawBird() {
+				const bob = state === 'ready' ? Math.sin(tick / 8) * 5 : 0;
+				ctx.save(); ctx.translate(bird.x, bird.y + bob); ctx.rotate(bird.tilt);
+				pixel(-15, -9, 25, 19, '#f4c542'); pixel(-10, -14, 15, 5, '#f4c542');
+				pixel(-17, -4, 6, 12, '#d99436'); pixel(-8, -5, 15, 8, '#ffe878');
+				pixel(7, -5, 12, 8, '#f08c42'); pixel(9, -3, 10, 4, '#ffd25b');
+				pixel(2, -11, 6, 7, '#fff8d9'); pixel(5, -10, 3, 4, '#28334b');
+				pixel(-7, 8, 9, 3, '#e9863b'); ctx.restore();
+			}
+			function drawGround() {
+				pixel(0, groundY, W, 60, '#ded895'); pixel(0, groundY, W, 9, '#8fd34f'); pixel(0, groundY + 9, W, 5, '#5eaf50');
+				for (let x = -20 - groundShift % 24; x < W; x += 24) {
+					pixel(x, groundY + 21, 12, 5, '#c2b97a'); pixel(x + 12, groundY + 38, 12, 5, '#c2b97a'); pixel(x + 7, groundY + 13, 5, 5, '#f4e9a6');
+				}
+			}
+			function message(title, line) {
+				pixel(49, 201, 262, 102, '#fff0a8'); pixel(54, 206, 252, 92, '#44546a');
+				ctx.textAlign = 'center'; ctx.fillStyle = '#ffe66d'; ctx.font = 'bold 15px monospace'; ctx.fillText(title, W / 2, 239);
+				ctx.fillStyle = '#fff'; ctx.font = 'bold 10px monospace'; ctx.fillText(line, W / 2, 264);
+				ctx.fillStyle = '#b6dce0'; ctx.font = 'bold 9px monospace'; ctx.fillText(state === 'over' ? 'CLICK TO RETRY' : 'CLICK OR PRESS SPACE', W / 2, 282);
+			}
+			function finish() {
+				state = 'over';
+				if (score > best) { best = score; bestDisplay.textContent = best; try { localStorage.setItem('pixelFlapBest', best); } catch (_) {} }
+			}
+			function loop() {
+				tick++; background();
+				if (state === 'playing') {
+					bird.velocity += .28; bird.y += bird.velocity; bird.tilt = Math.min(.9, Math.max(-.55, bird.velocity * .11));
+					pipes.forEach(pipe => {
+						pipe.x -= 2.35;
+						if (!pipe.scored && pipe.x + 48 < bird.x) { pipe.scored = true; scoreDisplay.textContent = ++score; }
+						const overlap = bird.x + 12 > pipe.x - 5 && bird.x - 12 < pipe.x + 53;
+						if (overlap && (bird.y - 10 < pipe.top || bird.y + 10 > pipe.top + pipe.gap)) finish();
+					});
+					pipes = pipes.filter(pipe => pipe.x > -65);
+					if (pipes.length && pipes[pipes.length - 1].x < W - 170) addPipe(W + 15);
+					if (bird.y > groundY - 11 || bird.y < -15) finish();
+					groundShift += 2.35;
+				}
+				pipes.forEach(drawPipe); drawBird(); drawGround();
+				if (state === 'ready') message('READY?', 'A PIXEL ADVENTURE');
+				if (state === 'over') message('GAME OVER', `PIPES PASSED: ${score}`);
+				requestAnimationFrame(loop);
+			}
+			reset(); loop();
+		})();
+	</script>
+</body>
+</html>

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Elytra: Rift Runner</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101624;color:#fff;font-family:system-ui,-apple-system,Segoe UI,sans-serif}body{display:grid;place-items:center}#game{position:relative;width:min(100vw,1100px);height:min(100vh,700px);overflow:hidden;background:#17263a;box-shadow:0 18px 70px #0009;touch-action:none}canvas{display:block;width:100%;height:100%;image-rendering:pixelated}.topbar{position:absolute;inset:16px 18px auto;display:flex;justify-content:space-between;align-items:flex-start;pointer-events:none;text-shadow:0 2px 4px #000} .brand{font-weight:900;letter-spacing:.08em;font-size:clamp(13px,2vw,18px)}.dimension{padding:7px 12px;border:1px solid #ffffff55;border-radius:4px;background:#1119;font-size:12px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.score{position:absolute;top:17%;left:50%;transform:translateX(-50%);font-size:clamp(32px,7vw,54px);font-weight:1000;text-shadow:0 4px 0 #0008;pointer-events:none}.panel{position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(#07101a33,#07101a99);padding:24px}.card{width:min(440px,100%);text-align:center;padding:30px 28px;background:#152236ed;border:2px solid #a9d8ff66;box-shadow:0 10px 0 #09111b;border-radius:8px}.card h1{margin:0 0 8px;font-size:clamp(27px,6vw,42px);line-height:1.04}.card p{color:#d5e5f7;line-height:1.55;margin:10px 0 20px}.card button{border:0;border-bottom:5px solid #28643a;border-radius:5px;padding:13px 28px;background:#48a85f;color:#fff;font-weight:900;font-size:16px;cursor:pointer}.card button:active{transform:translateY(3px);border-bottom-width:2px}.hint{font-size:12px!important;color:#aabed2!important;margin:15px 0 0!important}.hide{display:none}.flash{position:absolute;inset:0;pointer-events:none;background:#fff;opacity:0;transition:opacity .15s}
+</style>
+</head>
+<body>
+<main id="game" aria-label="Elytra Rift Runner game">
+<canvas id="screen"></canvas>
+<div class="topbar"><div class="brand">✦ RIFT RUNNER</div><div class="dimension" id="dimension">OVERWORLD</div></div>
+<div class="score" id="score">0</div>
+<div class="flash" id="flash"></div>
+<section class="panel" id="panel"><div class="card"><h1 id="title">ELYTRA<br>RIFT RUNNER</h1><p id="message">Strap on your wings and soar through shifting dimensions. Dodge the rifts and the mobs’ incoming projectiles!</p><button id="play">TAKE FLIGHT</button><p class="hint">SPACE / TAP / CLICK to flap · Keep moving!</p></div></section>
+</main>
+<script>
+(()=>{
+const canvas=document.querySelector('#screen'),ctx=canvas.getContext('2d'),wrap=document.querySelector('#game'),scoreEl=document.querySelector('#score'),dimEl=document.querySelector('#dimension'),panel=document.querySelector('#panel'),titleEl=document.querySelector('#title'),messageEl=document.querySelector('#message'),playBtn=document.querySelector('#play'),flash=document.querySelector('#flash');
+let W=0,H=0,dpr=1,state='ready',last=0,score=0,best=Number(localStorage.getItem('riftBest')||0),time=0,spawn=0,shotSpawn=0,transition=0,dimIndex=0,shake=0;
+const dims=[{name:'OVERWORLD',sky:['#72c9ee','#d7f5ff'],far:'#4f9a69',near:'#39704c',ground:'#70513c',accent:'#55bc69',mob:'#263b37'},{name:'NETHER',sky:['#571f37','#d25541'],far:'#73334a',near:'#472537',ground:'#302331',accent:'#ff684b',mob:'#1a101a'},{name:'THE END',sky:['#17112f','#593477'],far:'#45335c',near:'#29223d',ground:'#392c49',accent:'#cb83ff',mob:'#171426'}];
+const player={x:0,y:0,vy:0,rot:0};let gates=[],shots=[],particles=[];
+function resize(){const r=wrap.getBoundingClientRect();W=r.width;H=r.height;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);player.x=W*.27;if(state==='ready')player.y=H*.48;draw()}
+window.addEventListener('resize',resize);
+function rect(x,y,w,h,c){ctx.fillStyle=c;ctx.fillRect(Math.round(x),Math.round(y),Math.round(w),Math.round(h))}
+function drawBackground(dt){let d=dims[dimIndex],scroll=time*42;let gr=ctx.createLinearGradient(0,0,0,H);gr.addColorStop(0,d.sky[0]);gr.addColorStop(1,d.sky[1]);ctx.fillStyle=gr;ctx.fillRect(0,0,W,H);
+// square stars / clouds
+for(let i=0;i<38;i++){let x=((i*173-scroll*.16)%(W+80)+W+80)%(W+80)-20,y=(i*67%Math.floor(H*.65));rect(x,y,2+(i%3),2+(i%3),dimIndex===2?'#e7caff88':'#ffffff65')}
+// distant blocky terrain
+ctx.fillStyle=d.far;ctx.beginPath();ctx.moveTo(0,H*.68);for(let x=0;x<=W+50;x+=50){let yy=H*.61+Math.sin((x+scroll*.24)/90)*H*.045+Math.cos((x+scroll*.12)/51)*H*.025;ctx.lineTo(x,yy);ctx.lineTo(x+25,yy);ctx.lineTo(x+25,yy+H*.08)}ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+for(let i=0;i<8;i++){let x=((i*191-scroll*.38)%(W+220)+W+220)%(W+220)-100,y=H*(.49+(i%3)*.035),s=20+i%3*9;rect(x,y,s*2,s,d.near);rect(x+s*.35,y-s*.72,s,s*.72,d.near);rect(x+s*1.1,y-s*.45,s*.9,s*.45,d.near);}
+// lower block landscape
+let gy=H*.89;rect(0,gy,W,H-gy,d.ground);rect(0,gy,W,7,d.accent);for(let x=-((scroll*.8)%32);x<W;x+=32){rect(x,gy+9,30,3,'#ffffff14');rect(x+14,gy+16,3,7,'#00000022')}
+// mobs in the far background
+for(let i=0;i<4;i++){let x=((i*257-scroll*.65)%(W+130)+W+130)%(W+130)-55,y=H*(.65+(i%2)*.07),scale=.65+(i%3)*.12;drawMob(x,y,scale,false)}
+}
+function drawMob(x,y,s,front=true){let d=dims[dimIndex],c=d.mob;ctx.save();ctx.translate(x,y);ctx.scale(s,s); // tiny blocky skeleton / piglin silhouette
+rect(-11,-28,22,25,c);rect(-9,-42,18,16,c);rect(-13,-39,4,4,'#e2d38a');rect(5,-39,4,4,'#e2d38a');rect(-7,-3,6,16,c);rect(3,-3,6,16,c);rect(-20,-23,8,7,c);rect(12,-23,8,7,c);
+// raised bow
+rect(15,-31,3,21,front?'#d7ad62':'#6d5943');rect(17,-32,7,3,front?'#d7ad62':'#6d5943');ctx.restore()}
+function drawGate(g){let d=dims[dimIndex],gap=g.gap;let bw=48;rect(g.x,0,bw,g.top,d.near);rect(g.x-6,g.top-12,bw+12,12,d.accent);rect(g.x,g.top+gap,bw,H-(g.top+gap)-H*.1,d.near);rect(g.x-6,g.top+gap,bw+12,12,d.accent); // pixel flecks
+for(let yy=20;yy<g.top-14;yy+=35)rect(g.x+8+(yy%2)*15,yy,7,7,'#ffffff18');for(let yy=g.top+gap+25;yy<H*.88;yy+=35)rect(g.x+24,yy,7,7,'#ffffff18')}
+function drawShot(s){ctx.save();ctx.translate(s.x,s.y);ctx.rotate(s.rot);let color=dims[dimIndex].accent;rect(-10,-5,18,10,color);rect(-5,-9,10,18,color);rect(-16,-2,7,4,'#ffe9a1');rect(-2,-2,4,4,'#fff4c2');ctx.restore();}
+function drawPlayer(){ctx.save();ctx.translate(player.x,player.y);ctx.rotate(player.rot);let wing=player.vy<0?'#d7f1ff':'#8fc5e4';// elytra wings behind avatar
+rect(-24,-9,15,24,'#315a78');rect(-21,-14,12,8,wing);rect(-27,-2,7,11,wing);rect(-18,8,9,7,'#24445e');rect(9,-9,15,24,'#315a78');rect(9,-14,12,8,wing);rect(20,-2,7,11,wing);rect(9,8,9,7,'#24445e');
+// blocky adventurer
+rect(-10,-10,20,20,'#2673a8');rect(-9,-21,18,13,'#d7a878');rect(-10,-24,20,6,'#60412e');rect(-7,-17,3,3,'#26384c');rect(4,-17,3,3,'#26384c');rect(-7,1,6,12,'#273b52');rect(2,1,6,12,'#273b52');rect(-12,-7,4,13,'#d7a878');rect(8,-7,4,13,'#d7a878');ctx.restore()}
+function draw(){if(!W||!H)return;ctx.clearRect(0,0,W,H);drawBackground(0);for(const g of gates)drawGate(g);for(const s of shots)drawShot(s);for(const p of particles){rect(p.x,p.y,p.size,p.size,p.color)}drawPlayer();if(shake){ctx.save();ctx.restore()}}
+function start(){state='playing';score=0;time=0;spawn=.65;shotSpawn=1.6;transition=0;dimIndex=0;gates=[];shots=[];particles=[];player.y=H*.48;player.vy=-310;player.rot=-.25;scoreEl.textContent='0';dimEl.textContent=dims[0].name;panel.classList.add('hide');last=performance.now();requestAnimationFrame(loop)}
+function flap(){if(state==='ready'||state==='over'){start();return}if(state==='playing'){player.vy=-330;for(let i=0;i<4;i++)particles.push({x:player.x-17,y:player.y+Math.random()*12-6,size:3+Math.random()*3,color:'#d5f1ff',vx:-40-Math.random()*50,vy:(Math.random()-.5)*60,life:.35})}}
+function finish(){if(state!=='playing')return;state='over';best=Math.max(best,score);localStorage.setItem('riftBest',best);titleEl.innerHTML='RIFT COLLISION';messageEl.innerHTML=`You flew through <b>${score}</b> rift${score===1?'':'s'}. Best flight: <b>${best}</b>. Ready for another run?`;playBtn.textContent='FLY AGAIN';panel.classList.remove('hide')}
+function loop(now){if(state!=='playing')return;let dt=Math.min((now-last)/1000,.035);last=now;update(dt);draw();requestAnimationFrame(loop)}
+function update(dt){time+=dt;player.vy+=850*dt;player.y+=player.vy*dt;player.rot=Math.max(-.48,Math.min(.85,player.vy/520));let speed=190+Math.min(score*2,95);spawn-=dt;shotSpawn-=dt;transition+=dt;
+if(transition>18){transition=0;dimIndex=(dimIndex+1)%dims.length;dimEl.textContent=dims[dimIndex].name;flash.style.opacity='.32';setTimeout(()=>flash.style.opacity='0',150);particles.push({x:W*.7,y:H*.35,size:36,color:dims[dimIndex].accent,vx:-120,vy:0,life:.5})}
+if(spawn<=0){let gap=Math.max(150,H*.29-score*1.1),top=H*.13+Math.random()*(H*.49);gates.push({x:W+30,top,gap,passed:false});spawn=1.9+Math.random()*.55}
+if(shotSpawn<=0){let x=W+25,y=H*(.52+Math.random()*.27);shots.push({x,y,rot:0,vy:(player.y-y)*.12});shotSpawn=1.45+Math.random()*1.25}
+for(let g of gates){g.x-=speed*dt;if(!g.passed&&g.x+48<player.x-16){g.passed=true;score++;scoreEl.textContent=score;if(score%5===0)transition=18.01}}
+for(let s of shots){s.x-=(speed+80)*dt;s.y+=s.vy*dt;s.rot+=dt*5}
+gates=gates.filter(g=>g.x>-70);shots=shots.filter(s=>s.x>-40);for(let p of particles){p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt}particles=particles.filter(p=>p.life>0);
+const px=player.x,py=player.y;if(py>H*.88-15||py<8){finish();return}for(let g of gates){if(px+12>g.x&&px-12<g.x+48&&(py-10<g.top||py+10>g.top+g.gap)){finish();return}}for(let s of shots){if(Math.abs(s.x-px)<20&&Math.abs(s.y-py)<17){finish();return}}
+}
+playBtn.addEventListener('click',e=>{e.stopPropagation();start()});wrap.addEventListener('pointerdown',e=>{if(e.target===playBtn)return;e.preventDefault();flap()});window.addEventListener('keydown',e=>{if(['Space','ArrowUp','KeyW'].includes(e.code)){e.preventDefault();if(!e.repeat)flap()} });
+resize();
+})();
+</script>
+</body>
+</html>
