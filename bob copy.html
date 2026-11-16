@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="theme-color" content="#101321">
+	<title>Starforge — Idle Beyond</title>
+	<style>
+		:root{color-scheme:dark;--bg:#101321;--panel:#191d30;--panel2:#20263c;--line:#303751;--text:#f2f4ff;--muted:#a3acc5;--cyan:#62e8dd;--violet:#a88bff;--gold:#ffce70;--green:#94edaa;--red:#ff8190}
+		*{box-sizing:border-box}body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 50% -20%,#2d3560 0,transparent 55%),var(--bg);color:var(--text);font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}button{font:inherit;color:inherit;cursor:pointer}button:focus-visible{outline:2px solid var(--cyan);outline-offset:3px}.wrap{max-width:1120px;margin:auto;padding:28px 20px 55px}.top{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}.brand{display:flex;align-items:center;gap:12px}.logo{width:43px;height:43px;border-radius:14px;display:grid;place-items:center;background:linear-gradient(135deg,#62e8dd,#8b78ff);color:#111629;font-size:23px;box-shadow:0 6px 24px #62e8dd33}.brand h1{font-size:20px;letter-spacing:.04em;margin:0}.brand p{margin:1px 0 0;color:var(--muted);font-size:12px}.save-state{color:var(--muted);font-size:12px}.save-state:before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--green);margin-right:7px;box-shadow:0 0 10px var(--green)}
+		.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px}.stat,.card{background:linear-gradient(145deg,#1d2238,#171b2c);border:1px solid var(--line);border-radius:16px}.stat{padding:15px 17px}.label{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted)}.value{font-size:23px;font-weight:750;line-height:1.2;margin-top:5px}.sub{color:var(--muted);font-size:12px;margin-top:4px}.layout{display:grid;grid-template-columns:1.03fr 1fr;gap:16px;align-items:start}.card{padding:21px}.hero{min-height:370px;display:flex;flex-direction:column;align-items:center;text-align:center;justify-content:center;position:relative;overflow:hidden}.hero:before{content:"";position:absolute;width:270px;height:270px;border-radius:50%;background:#806cff1b;filter:blur(35px);top:45px}.eyebrow{position:relative;color:var(--cyan);font-size:11px;font-weight:750;letter-spacing:.18em;text-transform:uppercase}.core{position:relative;width:170px;height:170px;border:1px solid #8e85ff77;border-radius:50%;margin:18px 0 16px;display:grid;place-items:center;background:radial-gradient(circle,#7068dc55 0,#38345c66 36%,#191d30 70%);box-shadow:0 0 55px #8574ff35,inset 0 0 30px #9c8bff22;transition:transform .12s,border-color .2s;cursor:pointer;user-select:none}.core:before,.core:after{content:"";position:absolute;inset:10px;border:1px solid #8b81e644;border-radius:50%;transform:rotateX(68deg)}.core:after{transform:rotateY(68deg)}.core:hover{border-color:var(--cyan);transform:scale(1.035)}.core:active{transform:scale(.96)}.core-icon{font-size:64px;filter:drop-shadow(0 0 14px #b4a1ff);animation:pulse 3s ease-in-out infinite}@keyframes pulse{50%{transform:scale(1.09);filter:drop-shadow(0 0 24px #b4a1ff)}}.mine-btn{position:relative;border:0;border-radius:10px;padding:12px 23px;font-weight:800;color:#13172a;background:linear-gradient(100deg,var(--cyan),#a6f1c0);box-shadow:0 5px 20px #62e8dd20}.mine-btn:hover{filter:brightness(1.08);transform:translateY(-1px)}.hero-hint{position:relative;margin:11px 0 0;color:var(--muted);font-size:12px}.rightcol{display:grid;gap:16px}.section-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.section-head h2{font-size:16px;margin:0}.section-head span{font-size:11px;color:var(--muted)}.shop{display:grid;gap:9px}.shop-item{display:flex;align-items:center;gap:12px;padding:12px;background:#ffffff05;border:1px solid #ffffff0b;border-radius:12px}.item-icon{width:40px;height:40px;flex:0 0 40px;display:grid;place-items:center;font-size:21px;border-radius:11px;background:#8b7bff18}.item-info{min-width:0;flex:1}.item-name{font-weight:700;font-size:13px}.item-desc{font-size:11px;color:var(--muted);margin-top:2px}.item-count{color:var(--cyan);font-size:12px;font-weight:700;margin:0 9px}.buy{border:1px solid #5ce4d833;border-radius:9px;background:#5ce4d80e;color:var(--cyan);padding:8px 11px;font-weight:750;font-size:12px;white-space:nowrap;min-width:97px}.buy:hover:not(:disabled){background:#5ce4d823}.buy:disabled{opacity:.42;cursor:not-allowed}.tabs{display:flex;gap:8px}.tab{border:1px solid var(--line);background:#ffffff05;border-radius:8px;padding:6px 10px;font-size:11px;color:var(--muted)}.tab.active{color:var(--text);border-color:#9c88ff88;background:#9c88ff18}.upgrades{display:grid;grid-template-columns:1fr 1fr;gap:9px}.upgrade{border:1px solid var(--line);background:#ffffff05;text-align:left;border-radius:11px;padding:12px;min-height:86px}.upgrade:hover:not(:disabled){border-color:#a88bff88;background:#a88bff0e}.upgrade:disabled{opacity:.45;cursor:not-allowed}.upgrade strong{display:block;font-size:12px}.upgrade small{display:block;color:var(--muted);margin:4px 0;font-size:11px}.upgrade em{font-size:11px;color:var(--gold);font-style:normal}.bottom{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}.progress-wrap{height:8px;border-radius:20px;background:#0e1220;overflow:hidden;margin:12px 0 8px}.progress{height:100%;width:0;background:linear-gradient(90deg,var(--violet),var(--cyan));transition:width .25s}.prestige-row{display:flex;justify-content:space-between;align-items:center;gap:12px}.prestige-btn{background:linear-gradient(100deg,#a88bff,#e6aaff);color:#171329;border:0;border-radius:9px;padding:10px 14px;font-weight:800}.prestige-btn:disabled{opacity:.42;cursor:not-allowed}.achievements{display:flex;gap:8px;flex-wrap:wrap}.badge{width:38px;height:38px;display:grid;place-items:center;border:1px solid var(--line);border-radius:11px;background:#ffffff04;filter:grayscale(1);opacity:.35;font-size:18px}.badge.unlocked{filter:none;opacity:1;border-color:#ffce7077;background:#ffce7010}.toast{position:fixed;left:50%;bottom:24px;transform:translate(-50%,20px);background:#242b43;border:1px solid #596584;border-radius:12px;padding:11px 17px;opacity:0;pointer-events:none;transition:.25s;z-index:5;box-shadow:0 8px 30px #0007}.toast.show{opacity:1;transform:translate(-50%,0)}.footer{display:flex;justify-content:space-between;align-items:center;color:var(--muted);font-size:11px;margin-top:18px}.text-btn{background:none;border:0;color:var(--muted);font-size:11px;padding:6px}.text-btn:hover{color:var(--red)}
+		@media(max-width:760px){.wrap{padding:18px 13px 40px}.stats{grid-template-columns:1fr 1fr;gap:8px}.stat{padding:12px}.value{font-size:19px}.layout,.bottom{grid-template-columns:1fr}.hero{min-height:325px}.card{padding:16px}.footer{gap:10px;flex-wrap:wrap}.shop-item{gap:8px}.item-count{margin:0 2px}}
+		@media(max-width:390px){.shop-item{flex-wrap:wrap}.item-info{min-width:calc(100% - 65px)}.item-count{margin-left:50px}.buy{margin-left:auto}.upgrades{grid-template-columns:1fr}}
+	</style>
+</head>
+<body>
+	<main class="wrap">
+		<header class="top"><div class="brand"><div class="logo">✦</div><div><h1>STARFORGE</h1><p>Idle beyond the known universe</p></div></div><div class="save-state" id="saveState">Autosaved</div></header>
+		<section class="stats" aria-label="Resources">
+			<div class="stat"><div class="label">Stardust</div><div class="value" id="dust">0</div><div class="sub" id="dustRate">✨ 0 per second</div></div>
+			<div class="stat"><div class="label">Lifetime stardust</div><div class="value" id="lifetime">0</div><div class="sub">Your cosmic legacy</div></div>
+			<div class="stat"><div class="label">Click power</div><div class="value" id="power">+1</div><div class="sub">Per core tap</div></div>
+			<div class="stat"><div class="label">Star shards</div><div class="value" id="shards">0</div><div class="sub">Permanent ascension bonus</div></div>
+		</section>
+		<section class="layout">
+			<div class="card hero">
+				<div class="eyebrow">A universe in the making</div>
+				<div class="core" id="core" role="button" tabindex="0" aria-label="Tap to collect stardust"><span class="core-icon">✧</span></div>
+				<button class="mine-btn" id="mine">✦ &nbsp; HARVEST STARDUST</button>
+				<p class="hero-hint">Tap the core or press <b>Space</b> to harvest</p>
+			</div>
+			<div class="rightcol">
+				<section class="card">
+					<div class="section-head"><h2>Cosmic industry</h2><span>Build your production</span></div>
+					<div class="shop" id="shop"></div>
+				</section>
+				<section class="card">
+					<div class="section-head"><h2>Research lab</h2><div class="tabs"><button class="tab active" data-tab="click">Harvest</button><button class="tab" data-tab="idle">Industry</button></div></div>
+					<div class="upgrades" id="upgrades"></div>
+				</section>
+			</div>
+		</section>
+		<section class="bottom">
+			<div class="card"><div class="section-head"><h2>Ascension</h2><span>Reset for permanent power</span></div><div class="prestige-row"><div><b id="prestigeGain">0 star shards</b><div class="sub" id="prestigeHint">Earn 10,000 lifetime stardust to ascend</div></div><button class="prestige-btn" id="prestige" disabled>ASCEND</button></div><div class="progress-wrap"><div class="progress" id="progress"></div></div><div class="sub">Each shard boosts all production by 10%.</div></div>
+			<div class="card"><div class="section-head"><h2>Milestones</h2><span id="achievementCount">0 / 6</span></div><div class="achievements" id="achievements"></div><div class="sub" id="achievementHint" style="margin-top:12px">Little steps. Big universe.</div></div>
+		</section>
+		<footer class="footer"><span>Progress saves automaticax lly on this device.</span><button class="text-btn" id="reset">Reset universe</button></footer>
+	</main>
+	<div class="toast" id="toast" role="status" aria-live="polite"></div>
+	<script>
+		(()=>{
+			const buildings=[
+				{id:'drone',name:'Stardust drone',icon:'🛰️',desc:'A tiny collector in the void.',base:15,rate:0.2},
+				{id:'probe',name:'Lunar probe',icon:'🌙',desc:'Maps and mines nearby moons.',base:100,rate:1.5},
+				{id:'foundry',name:'星forge foundry',icon:'⚙️',desc:'Turns cosmic dust into more dust.',base:650,rate:9},
+				{id:'portal',name:'Nebula portal',icon:'🌀',desc:'Harvests energy from elsewhere.',base:4200,rate:52},
+				{id:'dyson',name:'Dyson swarm',icon:'☀️',desc:'A star-powered industrial marvel.',base:28000,rate:330}
+			];
+			const upgrades=[
+				{id:'tap2',tab:'click',name:'Stellar fingertips',desc:'Double your harvest power.',cost:100,kind:'click',value:2},
+				{id:'tap3',tab:'click',name:'Gravity gloves',desc:'Triple your harvest power.',cost:1800,kind:'click',value:3},
+				{id:'tap4',tab:'click',name:'Quantum pickaxe',desc:'Five times the harvest power.',cost:24000,kind:'click',value:5},
+				{id:'droneBoost',tab:'idle',name:'Efficient rotors',desc:'Drones produce 2× stardust.',cost:250,kind:'building',target:'drone'},
+				{id:'industryBoost',tab:'idle',name:'Refined star maps',desc:'All industry produces 2×.',cost:3200,kind:'all'},
+				{id:'bigBoost',tab:'idle',name:'Singularity engine',desc:'All industry produces 3×.',cost:40000,kind:'all'}
+			];
+			const achievements=[['first','✨','First light',1],['hundred','💫','Cosmic pocket change',100],['thousand','🌙','Moon money',1000],['firstBuild','🛰️','Built different',0],['million','🌌','A million worlds',1000000],['ascend','👑','Beyond the stars',-1]];
+			const fresh=()=>({dust:0,lifetime:0,shards:0,click:1,buildings:{},bought:[],earned:[],last:Date.now()});
+			let state;try{state={...fresh(),...JSON.parse(localStorage.getItem('starforge-save')||'{}')};state.buildings=state.buildings||{};state.bought=state.bought||[];state.earned=state.earned||[]}catch{state=fresh()}
+			let currentTab='click',toastTimer;
+			const $=id=>document.getElementById(id),fmt=n=>{if(n<1000)return Math.floor(n).toLocaleString();const units=['K','M','B','T','Qa','Qi'];let i=-1;while(n>=1000&&i<units.length-1){n/=1000;i++}return n.toFixed(n<10?2:1)+units[i]},count=id=>state.buildings[id]||0;
+			const boost=()=>Math.pow(1.1,state.shards)*(state.bought.includes('industryBoost')?2:1)*(state.bought.includes('bigBoost')?3:1);
+			const rate=()=>buildings.reduce((sum,b)=>sum+count(b.id)*b.rate*(b.id==='drone'&&state.bought.includes('droneBoost')?2:1),0)*boost();
+			function save(){state.last=Date.now();try{localStorage.setItem('starforge-save',JSON.stringify(state));$('saveState').textContent='Autosaved'}catch{$('saveState').textContent='Save unavailable'}}
+			function toast(text){const el=$('toast');el.textContent=text;el.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>el.classList.remove('show'),2100)}
+			function harvest(){const amount=state.click*boost();state.dust+=amount;state.lifetime+=amount;render()}
+			function cost(b){return Math.ceil(b.base*Math.pow(1.15,count(b.id)))}
+			function buyBuilding(id){const b=buildings.find(x=>x.id===id),price=cost(b);if(state.dust<price)return;state.dust-=price;state.buildings[id]=count(id)+1;render()}
+			function buyUpgrade(id){const u=upgrades.find(x=>x.id===id);if(!u||state.bought.includes(id)||state.dust<u.cost)return;state.dust-=u.cost;state.bought.push(id);if(u.kind==='click')state.click*=u.value;toast('Research complete: '+u.name);render()}
+			function ascensionGain(){return Math.floor(Math.sqrt(state.lifetime/10000))}
+			function ascend(){const gain=ascensionGain();if(!gain)return;if(!confirm(`Ascend and gain ${gain} star shard${gain===1?'':'s'}? Your stardust, industry and research will reset.`))return;state.shards+=gain;const keep=state.shards;state=fresh();state.shards=keep;save();toast(`Ascended! +${gain} star shard${gain===1?'':'s'}`);render()}
+			function render(){
+				$('dust').textContent=fmt(state.dust);$('lifetime').textContent=fmt(state.lifetime);$('power').textContent='+'+fmt(state.click*boost());$('shards').textContent=fmt(state.shards);$('dustRate').textContent='✨ '+fmt(rate())+' per second';
+				$('shop').innerHTML=buildings.map(b=>`<div class="shop-item"><div class="item-icon">${b.icon}</div><div class="item-info"><div class="item-name">${b.name}</div><div class="item-desc">${fmt(b.rate*boost()*(b.id==='drone'&&state.bought.includes('droneBoost')?2:1))}/sec each · ${fmt(cost(b))} ✨</div></div><div class="item-count">×${count(b.id)}</div><button class="buy" data-buy="${b.id}" ${state.dust<cost(b)?'disabled':''}>Buy</button></div>`).join('');
+				const shown=upgrades.filter(u=>u.tab===currentTab&&!state.bought.includes(u.id));$('upgrades').innerHTML=shown.length?shown.map(u=>`<button class="upgrade" data-upgrade="${u.id}" ${state.dust<u.cost?'disabled':''}><strong>${u.name}</strong><small>${u.desc}</small><em>${fmt(u.cost)} ✨</em></button>`).join(''):'<div class="sub">All research in this category complete. ✨</div>';
+				document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('active',t.dataset.tab===currentTab));
+				const gain=ascensionGain();$('prestigeGain').textContent=`${gain} star shard${gain===1?'':'s'} available`;$('prestigeHint').textContent=gain?'Ready when you are.':'Earn 10,000 lifetime stardust to ascend';$('prestige').disabled=!gain;
+				$('progress').style.width=Math.min(100,state.lifetime/10000*100)+'%';$('achievements').innerHTML=achievements.map(([id,icon,label])=>`<div class="badge ${state.earned.includes(id)?'unlocked':''}" title="${label}" aria-label="${label}${state.earned.includes(id)?' unlocked':' locked'}">${icon}</div>`).join('');$('achievementCount').textContent=`${state.earned.length} / ${achievements.length}`;
+				buildings.forEach(b=>{const btn=document.querySelector(`[data-buy="${b.id}"]`);if(btn)btn.disabled=state.dust<cost(b)});upgrades.filter(u=>u.tab===currentTab&&!state.bought.includes(u.id)).forEach(u=>{const btn=document.querySelector(`[data-upgrade="${u.id}"]`);if(btn)btn.disabled=state.dust<u.cost});
+			}
+			function checkAchievements(){let changed=false;for(const [id,,label,threshold] of achievements){const done=id==='firstBuild'?buildings.some(b=>count(b.id)>0):id==='ascend'?state.shards>0:state.lifetime>=threshold;if(done&&!state.earned.includes(id)){state.earned.push(id);toast('Milestone unlocked: '+label);changed=true}}if(changed)render()}
+			$('mine').addEventListener('click',harvest);$('core').addEventListener('click',harvest);$('core').addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();harvest()}});
+			document.addEventListener('keydown',e=>{if(e.code==='Space'&&!['BUTTON','INPUT'].includes(document.activeElement.tagName)){e.preventDefault();harvest()}});
+			$('shop').addEventListener('click',e=>{const b=e.target.closest('[data-buy]');if(b)buyBuilding(b.dataset.buy)});$('upgrades').addEventListener('click',e=>{const b=e.target.closest('[data-upgrade]');if(b)buyUpgrade(b.dataset.upgrade)});
+			document.querySelectorAll('.tab').forEach(t=>t.addEventListener('click',()=>{currentTab=t.dataset.tab;render()}));$('prestige').addEventListener('click',ascend);
+			$('reset').addEventListener('click',()=>{if(confirm('Erase all Starforge progress on this device?')){localStorage.removeItem('starforge-save');state=fresh();render();toast('Universe reset. A new beginning!')}});
+			const away=Math.min(8*60*60,Math.max(0,(Date.now()-(state.last||Date.now()))/1000));if(away>5){const earned=rate()*away;state.dust+=earned;state.lifetime+=earned;setTimeout(()=>toast(`Welcome back! Your industry made ${fmt(earned)} stardust.`),350)}
+			checkAchievements();render();setInterval(()=>{const gain=rate()/10;state.dust+=gain;state.lifetime+=gain;checkAchievements();render()},100);setInterval(save,5000);window.addEventListener('beforeunload',save);
+		})();
+	</script>
+</body>
+</html>
