@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+	<title>Orb Wave</title>
+	<style>
+		:root { color-scheme: dark; --cyan: #66f6ff; --pink: #ff63cc; }
+		* { box-sizing: border-box; }
+		body { margin: 0; min-height: 100vh; display: grid; place-items: center; overflow: hidden; background: #080b19; color: white; font-family: system-ui, -apple-system, Segoe UI, sans-serif; }
+		.game { width: min(100vw, 1100px); padding: 18px; }
+		.top { display: flex; justify-content: space-between; align-items: center; margin: 0 2px 10px; }
+		h1 { margin: 0; font-size: clamp(18px, 3vw, 25px); letter-spacing: .14em; text-transform: uppercase; }
+		h1 span { color: var(--cyan); }
+		.stats { display: flex; gap: 20px; color: #aab4d6; font-size: 13px; letter-spacing: .08em; }
+		.stats b { color: white; font-size: 16px; margin-left: 5px; }
+		.stage { position: relative; overflow: hidden; border: 1px solid #293252; border-radius: 12px; box-shadow: 0 0 50px #12244866; background: #0c1124; }
+		canvas { display: block; width: 100%; aspect-ratio: 16 / 9; touch-action: none; }
+		.overlay { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; background: #080b1988; padding: 20px; }
+		.overlay.hidden { display: none; }
+		.card { max-width: 470px; padding: 25px 32px; border: 1px solid #ffffff25; border-radius: 16px; background: #10172bdc; box-shadow: 0 12px 50px #0008; }
+		.card h2 { margin: 0 0 8px; font-size: clamp(25px, 5vw, 42px); letter-spacing: .09em; text-transform: uppercase; }
+		.card p { margin: 8px 0 18px; color: #b7c1df; line-height: 1.55; }
+		.hint { color: #8290b7 !important; font-size: 12px; }
+		button { border: 0; border-radius: 8px; padding: 12px 25px; background: linear-gradient(110deg, #42dfee, #9b7aff); color: #07101f; font: 800 13px system-ui; letter-spacing: .12em; cursor: pointer; }
+		button:hover { filter: brightness(1.13); transform: translateY(-1px); }
+		.footer { margin-top: 9px; color: #7581a5; font-size: 12px; text-align: center; }
+		@media (max-width: 520px) { .game { padding: 10px; } .stats { gap: 10px; font-size: 11px; } .stats b { font-size: 14px; } .card { padding: 20px; } }
+	</style>
+</head>
+<body>
+	<main class="game">
+		<header class="top">
+			<h1>Orb <span>Wave</span></h1>
+			<div class="stats"><div>BEST <b id="best">0%</b></div><div>RUN <b id="score">0%</b></div></div>
+		</header>
+		<section class="stage" aria-label="Orb Wave game">
+			<canvas id="game" aria-label="Navigate the orb through the course"></canvas>
+			<div class="overlay" id="overlay">
+				<div class="card"><h2 id="title">Orb Wave</h2><p id="message">Ride the wave through the neon course. Hold to rise, release to dive.</p><button id="start">START RUN</button><p class="hint">HOLD SPACE / CLICK / TOUCH TO FLY UP</p></div>
+			</div>
+		</section>
+		<div class="footer">Avoid the walls · Press R to restart</div>
+	</main>
+	<script>
+		(() => {
+			const canvas = document.getElementById('game');
+			const ctx = canvas.getContext('2d');
+			const overlay = document.getElementById('overlay');
+			const title = document.getElementById('title');
+			const message = document.getElementById('message');
+			const startButton = document.getElementById('start');
+			const scoreEl = document.getElementById('score');
+			const bestEl = document.getElementById('best');
+			let w = 960, h = 540, running = false, held = false, last = 0;
+			let player, distance = 0, best = Number(localStorage.getItem('orbWaveBest') || 0), trail = [];
+			const speed = 300, radius = 11;
+			bestEl.textContent = best + '%';
+
+			function resize() {
+				const rect = canvas.getBoundingClientRect();
+				const dpr = Math.min(devicePixelRatio || 1, 2);
+				canvas.width = Math.round(rect.width * dpr);
+				canvas.height = Math.round(rect.height * dpr);
+				ctx.setTransform(canvas.width / 960, 0, 0, canvas.height / 540, 0, 0);
+				draw();
+			}
+			function reset() {
+				player = { x: 190, y: 270, dir: 1 };
+				distance = 0; trail = [];
+				scoreEl.textContent = '0%';
+			}
+			function begin() {
+				reset(); running = true; held = false;
+				overlay.classList.add('hidden');
+				last = performance.now(); requestAnimationFrame(loop);
+			}
+			function finish() {
+				running = false; held = false;
+				const percent = Math.floor(distance / 34);
+				if (percent > best) { best = percent; localStorage.setItem('orbWaveBest', best); bestEl.textContent = best + '%'; }
+				title.textContent = 'CRASH!';
+				message.textContent = 'You made it ' + percent + '%. Ready for another run?';
+				startButton.textContent = 'TRY AGAIN'; overlay.classList.remove('hidden');
+			}
+			function obstacles() {
+				const result = [];
+				// A repeating sequence of narrow, offset passages creates the wave course.
+				for (let i = 0; i < 12; i++) {
+					const x = 430 + i * 270 - (distance % 270);
+					const center = 270 + Math.sin((i + Math.floor(distance / 270)) * 1.17) * 55;
+					const gap = 156;
+					result.push({ x, top: center - gap / 2, bottom: center + gap / 2 });
+				}
+				return result;
+			}
+			function update(dt) {
+				distance += speed * dt;
+				player.x += speed * dt;
+				player.y += (held ? -1 : 1) * 325 * dt;
+				player.dir = held ? -1 : 1;
+				scoreEl.textContent = Math.floor(distance / 34) + '%';
+				trail.push({ x: player.x, y: player.y });
+				while (trail.length > 30 || (trail.length && player.x - trail[0].x > 170)) trail.shift();
+				if (player.y < radius + 16 || player.y > h - radius - 16) { finish(); return; }
+				for (const o of obstacles()) {
+					const sx = o.x - player.x + 190;
+					if (sx < 220 && sx + 34 > 160 && (player.y - radius < o.top || player.y + radius > o.bottom)) { finish(); return; }
+				}
+			}
+			function draw() {
+				ctx.clearRect(0, 0, w, h);
+				const bg = ctx.createLinearGradient(0, 0, 960, 540);
+				bg.addColorStop(0, '#101a36'); bg.addColorStop(1, '#090d1d');
+				ctx.fillStyle = bg; ctx.fillRect(0, 0, 960, 540);
+				// Subtle neon grid
+				ctx.lineWidth = 1; ctx.strokeStyle = '#91baff0d';
+				for (let x = -((distance || 0) % 40); x < 960; x += 40) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 540); ctx.stroke(); }
+				for (let y = 16; y < 540; y += 40) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(960, y); ctx.stroke(); }
+				// Safe lane boundaries
+				ctx.fillStyle = '#ff5bbf'; ctx.shadowColor = '#ff5bbf'; ctx.shadowBlur = 12;
+				ctx.fillRect(0, 0, 960, 5); ctx.fillRect(0, 535, 960, 5); ctx.shadowBlur = 0;
+				for (const o of obstacles()) {
+					const x = o.x - player.x + 190;
+					if (x < -60 || x > 1000) continue;
+					const grad = ctx.createLinearGradient(x, 0, x + 34, 0);
+					grad.addColorStop(0, '#765bff'); grad.addColorStop(1, '#45e8ef');
+					ctx.fillStyle = grad; ctx.shadowColor = '#5c8cff'; ctx.shadowBlur = 16;
+					ctx.fillRect(x, 5, 34, o.top - 5);
+					ctx.fillRect(x, o.bottom, 34, 535 - o.bottom);
+					ctx.shadowBlur = 0;
+					ctx.fillStyle = '#ffffff88';
+					ctx.fillRect(x + 5, Math.max(10, o.top - 4), 24, 3);
+					ctx.fillRect(x + 5, o.bottom + 1, 24, 3);
+				}
+				// Glowing motion trail
+				if (trail.length > 1) {
+					ctx.beginPath();
+					trail.forEach((p, i) => { const x = 190 + p.x - player.x; if (i === 0) ctx.moveTo(x, p.y); else ctx.lineTo(x, p.y); });
+					ctx.strokeStyle = '#65f5ff'; ctx.lineWidth = 3; ctx.shadowColor = '#55eaff'; ctx.shadowBlur = 12; ctx.stroke(); ctx.shadowBlur = 0;
+				}
+				const py = player ? player.y : 270;
+				// Orb
+				ctx.save(); ctx.translate(190, py); ctx.rotate(player ? player.dir * .32 : 0);
+				ctx.shadowColor = '#69f8ff'; ctx.shadowBlur = 22;
+				const orb = ctx.createRadialGradient(-4, -5, 2, 0, 0, radius + 2);
+				orb.addColorStop(0, '#fff'); orb.addColorStop(.35, '#a4ffff'); orb.addColorStop(1, '#26a9e8');
+				ctx.fillStyle = orb; ctx.beginPath(); ctx.arc(0, 0, radius, 0, Math.PI * 2); ctx.fill();
+				ctx.shadowBlur = 0; ctx.strokeStyle = '#ffffff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, radius + 3, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+				ctx.fillStyle = '#b9c9ee'; ctx.font = '12px system-ui'; ctx.fillText('DISTANCE  ' + Math.floor(distance / 34) + '%', 22, 30);
+			}
+			function loop(now) {
+				if (!running) return;
+				const dt = Math.min((now - last) / 1000, .035); last = now;
+				update(dt); draw();
+				if (running) requestAnimationFrame(loop);
+			}
+			startButton.addEventListener('click', begin);
+			window.addEventListener('keydown', e => {
+				if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') { e.preventDefault(); held = true; }
+				if (e.code === 'KeyR' && !running) begin();
+			});
+			window.addEventListener('keyup', e => { if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) held = false; });
+			canvas.addEventListener('pointerdown', e => { e.preventDefault(); held = true; });
+			window.addEventListener('pointerup', () => held = false);
+			window.addEventListener('blur', () => held = false);
+			window.addEventListener('resize', resize);
+			reset(); resize();
+		})();
+	</script>
+</body>
+</html>

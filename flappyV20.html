@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ball SA</title>
+  <style>
+    :root {
+      --bg1: #7ad7ff;
+      --bg2: #dff7ff;
+      --ground: #7dcf4c;
+      --pipe: #3d8f2d;
+      --pipe2: #2f6d20;
+      --ball: #ffcc00;
+      --shadow: rgba(0, 0, 0, 0.18);
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: linear-gradient(180deg, var(--bg1), var(--bg2));
+      font-family: Arial, Helvetica, sans-serif;
+      overflow: hidden;
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+    }
+
+    canvas {
+      display: block;
+      width: min(92vw, 480px);
+      height: auto;
+      border-radius: 18px;
+      box-shadow: 0 18px 40px rgba(0,0,0,0.18);
+      background: linear-gradient(180deg, #75d0ff 0%, #d8f3ff 70%);
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="game" width="480" height="720" aria-label="Ball SA game"></canvas>
+
+  <script>
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const world = {
+      width: canvas.width,
+      height: canvas.height,
+      gravity: 0.5,
+      flap: -10.2,
+      pipeSpeed: 2.8,
+      pipeWidth: 72,
+      pipeGap: 175,
+      pipeSpawnMs: 1500,
+      groundHeight: 100,
+      lastPipeTime: 0,
+      started: false,
+      over: false,
+      score: 0,
+      best: Number(localStorage.getItem('ballsa-best') || 0),
+    };
+
+    const ball = {
+      x: 150,
+      y: canvas.height / 2,
+      radius: 18,
+      velocityY: 0,
+      rotation: 0,
+    };
+
+    let pipes = [];
+
+    function resetBall() {
+      ball.x = 150;
+      ball.y = world.height * 0.42;
+      ball.velocityY = 0;
+      ball.rotation = 0;
+    }
+
+    function resetGame() {
+      world.started = false;
+      world.over = false;
+      world.score = 0;
+      world.lastPipeTime = 0;
+      pipes = [];
+      resetBall();
+    }
+
+    function saveBest() {
+      if (world.score > world.best) {
+        world.best = world.score;
+        localStorage.setItem('ballsa-best', String(world.best));
+      }
+    }
+
+    function flap() {
+      if (!world.started) {
+        world.started = true;
+      }
+
+      if (world.over) {
+        resetGame();
+        world.started = true;
+      }
+
+      ball.velocityY = world.flap;
+    }
+
+    function spawnPipe() {
+      const minY = 110;
+      const maxY = world.height - world.groundHeight - world.pipeGap - 110;
+      const topHeight = minY + Math.random() * (maxY - minY);
+
+      pipes.push({
+        x: world.width + 30,
+        width: world.pipeWidth,
+        topHeight,
+        gap: world.pipeGap,
+        scored: false,
+      });
+    }
+
+    function update(delta) {
+      if (!world.started || world.over) {
+        return;
+      }
+
+      ball.velocityY += world.gravity * delta * 0.06;
+      ball.y += ball.velocityY * delta * 0.06;
+      ball.rotation = Math.min(Math.PI / 2, Math.max(-Math.PI / 2, ball.velocityY / 18));
+
+      world.lastPipeTime += delta;
+      if (world.lastPipeTime >= world.pipeSpawnMs) {
+        world.lastPipeTime = 0;
+        spawnPipe();
+      }
+
+      for (const pipe of pipes) {
+        pipe.x -= world.pipeSpeed * delta * 0.06;
+
+        if (!pipe.scored && pipe.x + pipe.width < ball.x) {
+          pipe.scored = true;
+          world.score += 1;
+        }
+      }
+
+      pipes = pipes.filter(pipe => pipe.x + pipe.width > -10);
+
+      const floorY = world.height - world.groundHeight;
+      const hitFloor = ball.y + ball.radius >= floorY;
+      const hitCeiling = ball.y - ball.radius <= 0;
+
+      if (hitFloor || hitCeiling) {
+        endGame();
+      }
+
+      for (const pipe of pipes) {
+        const inX = ball.x + ball.radius > pipe.x && ball.x - ball.radius < pipe.x + pipe.width;
+        const inTop = ball.y - ball.radius < pipe.topHeight;
+        const inBottom = ball.y + ball.radius > pipe.topHeight + pipe.gap;
+
+        if (inX && (inTop || inBottom)) {
+          endGame();
+          break;
+        }
+      }
+    }
+
+    function endGame() {
+      if (world.over) return;
+      world.over = true;
+      world.started = false;
+      saveBest();
+    }
+
+    function drawBackground() {
+      const sky = ctx.createLinearGradient(0, 0, 0, world.height);
+      sky.addColorStop(0, '#7ad7ff');
+      sky.addColorStop(1, '#dff7ff');
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, world.width, world.height);
+
+      for (let i = 0; i < 6; i++) {
+        const x = ((i * 160) - (performance.now() * 0.02) % 200) - 20;
+        const y = 120 + (i % 3) * 50;
+        ctx.fillStyle = 'rgba(255,255,255,0.65)';
+        ctx.beginPath();
+        ctx.arc(x, y, 30, 0, Math.PI * 2);
+        ctx.arc(x + 22, y + 5, 26, 0, Math.PI * 2);
+        ctx.arc(x + 50, y, 24, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawGround() {
+      const groundY = world.height - world.groundHeight;
+      ctx.fillStyle = '#7dcf4c';
+      ctx.fillRect(0, groundY, world.width, world.groundHeight);
+
+      ctx.fillStyle = '#5ba43d';
+      for (let x = 0; x < world.width + 20; x += 25) {
+        ctx.fillRect(x, groundY + 18, 15, 12);
+      }
+
+      ctx.strokeStyle = '#5d8b00';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0, groundY);
+      ctx.lineTo(world.width, groundY);
+      ctx.stroke();
+    }
+
+    function drawPipe(pipe) {
+      const topH = pipe.topHeight;
+      const bottomY = pipe.topHeight + pipe.gap;
+      const bottomH = world.height - world.groundHeight - bottomY;
+
+      ctx.fillStyle = '#3d8f2d';
+      ctx.fillRect(pipe.x, 0, pipe.width, topH);
+      ctx.fillRect(pipe.x - 6, topH - 18, pipe.width + 12, 18);
+
+      ctx.fillStyle = '#2f6d20';
+      ctx.fillRect(pipe.x + 10, 0, pipe.width - 20, topH);
+      ctx.fillRect(pipe.x + 10, topH - 18, pipe.width - 20, 18);
+
+      ctx.fillStyle = '#3d8f2d';
+      ctx.fillRect(pipe.x, bottomY, pipe.width, bottomH);
+      ctx.fillRect(pipe.x - 6, bottomY, pipe.width + 12, 18);
+
+      ctx.fillStyle = '#2f6d20';
+      ctx.fillRect(pipe.x + 10, bottomY, pipe.width - 20, bottomH);
+      ctx.fillRect(pipe.x + 10, bottomY, pipe.width - 20, 18);
+    }
+
+    function drawBall() {
+      ctx.save();
+      ctx.translate(ball.x, ball.y);
+      ctx.rotate(ball.rotation);
+
+      ctx.fillStyle = '#ffd93a';
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.radius, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#f5b900';
+      ctx.beginPath();
+      ctx.arc(-5, -7, 4, 0, Math.PI * 2);
+      ctx.arc(7, -7, 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = '#111';
+      ctx.beginPath();
+      ctx.arc(-5, -7, 2, 0, Math.PI * 2);
+      ctx.arc(7, -7, 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = '#111';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 5, 7, 0.2, Math.PI - 0.2);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawHUD() {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.font = 'bold 46px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText(String(world.score), canvas.width / 2, 90);
+
+      if (!world.started && !world.over) {
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.font = 'bold 42px Arial';
+        ctx.fillText('BALL SA', canvas.width / 2, 180);
+
+        ctx.font = 'bold 22px Arial';
+        ctx.fillText('click / space to start', canvas.width / 2, 230);
+      }
+
+      if (world.over) {
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.font = 'bold 46px Arial';
+        ctx.fillText('Game Over', canvas.width / 2, 180);
+
+        ctx.font = 'bold 24px Arial';
+        ctx.fillText('Score: ' + world.score, canvas.width / 2, 225);
+        ctx.fillText('Best: ' + world.best, canvas.width / 2, 260);
+        ctx.fillText('click / space to retry', canvas.width / 2, 300);
+      }
+    }
+
+    function draw() {
+      drawBackground();
+      for (const pipe of pipes) drawPipe(pipe);
+      drawGround();
+      drawBall();
+      drawHUD();
+    }
+
+    let lastTime = 0;
+    function loop(timestamp) {
+      const delta = timestamp - lastTime || 16;
+      lastTime = timestamp;
+      update(delta);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    document.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      flap();
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Space' || event.code === 'ArrowUp') {
+        event.preventDefault();
+        flap();
+      }
+    });
+
+    resetGame();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

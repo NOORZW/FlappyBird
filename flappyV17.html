@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Sky Hopper</title>
+	<style>
+		* { box-sizing: border-box; }
+		body {
+			margin: 0;
+			min-height: 100vh;
+			display: grid;
+			place-items: center;
+			background: #17243b;
+			color: #fff;
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		}
+		.game-wrap { width: min(94vw, 440px); text-align: center; }
+		h1 { margin: 0 0 12px; font-size: 1.5rem; letter-spacing: .08em; }
+		.frame {
+			position: relative;
+			overflow: hidden;
+			border: 4px solid rgba(255,255,255,.82);
+			border-radius: 16px;
+			box-shadow: 0 18px 50px #07101f99;
+			background: #80d8f4;
+		}
+		canvas { display: block; width: 100%; height: auto; touch-action: manipulation; }
+		.help { margin: 12px 0 0; color: #cbd6e8; font-size: .9rem; }
+	</style>
+</head>
+<body>
+	<main class="game-wrap">
+		<h1>SKY HOPPER</h1>
+		<div class="frame">
+			<canvas id="game" width="432" height="640" aria-label="Sky Hopper game"></canvas>
+		</div>
+		<p class="help">Tap, click, or press Space to flap</p>
+	</main>
+	<script>
+		(() => {
+			const canvas = document.getElementById('game');
+			const ctx = canvas.getContext('2d');
+			const W = canvas.width, H = canvas.height;
+			const groundH = 76;
+			let bird, pipes, score, best, state, frame, lastTime;
+
+			try { best = Number(localStorage.getItem('skyHopperBest')) || 0; }
+			catch (_) { best = 0; }
+
+			function reset() {
+				bird = { x: 112, y: H * .43, vy: 0, radius: 15, tilt: 0 };
+				pipes = [];
+				score = 0;
+				frame = 0;
+				state = 'ready';
+			}
+
+			function flap() {
+				if (state === 'over') reset();
+				if (state === 'ready') state = 'playing';
+				bird.vy = -390;
+			}
+
+			function handleInput(event) {
+				if (event.type === 'keydown') {
+					if (event.code !== 'Space' && event.code !== 'ArrowUp') return;
+					event.preventDefault();
+				}
+				flap();
+			}
+			canvas.addEventListener('pointerdown', handleInput);
+			window.addEventListener('keydown', handleInput);
+
+			function addPipe() {
+				const gap = 166;
+				const margin = 78;
+				const top = margin + Math.random() * (H - groundH - gap - margin * 2);
+				pipes.push({ x: W + 12, top, gap, scored: false });
+			}
+
+			function endGame() {
+				if (state !== 'playing') return;
+				state = 'over';
+				if (score > best) {
+					best = score;
+					try { localStorage.setItem('skyHopperBest', String(best)); } catch (_) {}
+				}
+			}
+
+			function update(dt) {
+				if (state !== 'playing') return;
+				frame += dt;
+				bird.vy += 1120 * dt;
+				bird.y += bird.vy * dt;
+				bird.tilt = Math.min(.95, Math.max(-.55, bird.vy / 520));
+
+				if (frame > 1.55) {
+					addPipe();
+					frame = 0;
+				}
+				for (const pipe of pipes) {
+					pipe.x -= 155 * dt;
+					if (!pipe.scored && pipe.x + 64 < bird.x) {
+						pipe.scored = true;
+						score++;
+					}
+					const overlapsX = bird.x + bird.radius > pipe.x && bird.x - bird.radius < pipe.x + 64;
+					if (overlapsX && (bird.y - bird.radius < pipe.top || bird.y + bird.radius > pipe.top + pipe.gap)) endGame();
+				}
+				pipes = pipes.filter(pipe => pipe.x > -70);
+				if (bird.y - bird.radius < 0 || bird.y + bird.radius > H - groundH) endGame();
+			}
+
+			function roundedRect(x, y, w, h, r) {
+				ctx.beginPath();
+				ctx.roundRect(x, y, w, h, r);
+				ctx.fill();
+			}
+
+			function drawBackground() {
+				const sky = ctx.createLinearGradient(0, 0, 0, H);
+				sky.addColorStop(0, '#72d4f1');
+				sky.addColorStop(1, '#c5f1ed');
+				ctx.fillStyle = sky;
+				ctx.fillRect(0, 0, W, H);
+				ctx.fillStyle = 'rgba(255,255,255,.62)';
+				for (const cloud of [{x:60,y:120,s:1},{x:310,y:205,s:.8},{x:205,y:68,s:.65}]) {
+					const drift = (performance.now() * .012 + cloud.x) % (W + 110) - 55;
+					ctx.beginPath();
+					ctx.ellipse(drift, cloud.y, 27 * cloud.s, 12 * cloud.s, 0, 0, Math.PI * 2);
+					ctx.ellipse(drift + 20 * cloud.s, cloud.y - 7 * cloud.s, 19 * cloud.s, 15 * cloud.s, 0, 0, Math.PI * 2);
+					ctx.ellipse(drift + 39 * cloud.s, cloud.y, 24 * cloud.s, 11 * cloud.s, 0, 0, Math.PI * 2);
+					ctx.fill();
+				}
+				ctx.fillStyle = '#9bdcae';
+				ctx.beginPath();
+				ctx.moveTo(0, H - groundH - 42);
+				ctx.quadraticCurveTo(100, H - groundH - 112, 220, H - groundH - 45);
+				ctx.quadraticCurveTo(340, H - groundH - 110, W, H - groundH - 50);
+				ctx.lineTo(W, H - groundH);
+				ctx.lineTo(0, H - groundH);
+				ctx.fill();
+			}
+
+			function drawPipes() {
+				for (const pipe of pipes) {
+					const bottomY = pipe.top + pipe.gap;
+					ctx.fillStyle = '#299b61';
+					roundedRect(pipe.x + 5, -8, 54, pipe.top - 8, 7);
+					roundedRect(pipe.x + 5, bottomY, 54, H - groundH - bottomY + 8, 7);
+					ctx.fillStyle = '#42c77c';
+					ctx.fillRect(pipe.x + 14, 0, 10, pipe.top - 10);
+					ctx.fillRect(pipe.x + 14, bottomY + 10, 10, H - groundH - bottomY);
+					ctx.fillStyle = '#23834f';
+					roundedRect(pipe.x, pipe.top - 22, 64, 22, 5);
+					roundedRect(pipe.x, bottomY, 64, 22, 5);
+				}
+			}
+
+			function drawBird() {
+				ctx.save();
+				ctx.translate(bird.x, bird.y);
+				ctx.rotate(bird.tilt);
+				ctx.fillStyle = '#ffd447';
+				ctx.beginPath();
+				ctx.ellipse(0, 0, 19, 15, 0, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = '#f2a832';
+				ctx.beginPath();
+				ctx.ellipse(-5, 5, 10, 6, -.35, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = '#fff';
+				ctx.beginPath();
+				ctx.arc(8, -6, 5, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = '#26354b';
+				ctx.beginPath();
+				ctx.arc(10, -6, 2, 0, Math.PI * 2);
+				ctx.fill();
+				ctx.fillStyle = '#f07845';
+				ctx.beginPath();
+				ctx.moveTo(15, 0);
+				ctx.lineTo(27, 4);
+				ctx.lineTo(15, 8);
+				ctx.closePath();
+				ctx.fill();
+				ctx.restore();
+			}
+
+			function drawGround() {
+				ctx.fillStyle = '#d9bc72';
+				ctx.fillRect(0, H - groundH, W, groundH);
+				ctx.fillStyle = '#72c957';
+				ctx.fillRect(0, H - groundH, W, 13);
+				ctx.fillStyle = '#54ad49';
+				for (let x = -24; x < W + 24; x += 32) {
+					const offset = state === 'playing' ? (performance.now() * .16) % 32 : 0;
+					ctx.fillRect(x - offset, H - groundH + 14, 16, 5);
+				}
+				ctx.fillStyle = 'rgba(132,96,44,.22)';
+				for (let x = 20; x < W; x += 61) ctx.fillRect(x, H - 31, 5, 4);
+			}
+
+			function drawText(text, y, size, color = '#fff') {
+				ctx.font = `800 ${size}px system-ui, sans-serif`;
+				ctx.textAlign = 'center';
+				ctx.lineWidth = 5;
+				ctx.strokeStyle = 'rgba(31,59,80,.4)';
+				ctx.strokeText(text, W / 2, y);
+				ctx.fillStyle = color;
+				ctx.fillText(text, W / 2, y);
+			}
+
+			function drawOverlay() {
+				if (state === 'playing') {
+					drawText(String(score), 62, 42);
+					return;
+				}
+				ctx.fillStyle = 'rgba(22,42,61,.28)';
+				ctx.fillRect(0, 0, W, H - groundH);
+				ctx.fillStyle = 'rgba(255,255,255,.94)';
+				roundedRect(48, 205, W - 96, 188, 18);
+				if (state === 'ready') {
+					ctx.fillStyle = '#253b50';
+					ctx.font = '800 27px system-ui, sans-serif';
+					ctx.textAlign = 'center';
+					ctx.fillText('Ready to fly?', W / 2, 260);
+					ctx.font = '500 16px system-ui, sans-serif';
+					ctx.fillStyle = '#566c7c';
+					ctx.fillText('Tap or press Space to start', W / 2, 301);
+					ctx.font = '700 17px system-ui, sans-serif';
+					ctx.fillStyle = '#253b50';
+					ctx.fillText(`BEST  ${best}`, W / 2, 350);
+				} else {
+					ctx.fillStyle = '#253b50';
+					ctx.font = '800 28px system-ui, sans-serif';
+					ctx.textAlign = 'center';
+					ctx.fillText('Nice try!', W / 2, 255);
+					ctx.font = '600 17px system-ui, sans-serif';
+					ctx.fillStyle = '#566c7c';
+					ctx.fillText(`Score  ${score}     Best  ${best}`, W / 2, 296);
+					ctx.font = '700 16px system-ui, sans-serif';
+					ctx.fillStyle = '#27845a';
+					ctx.fillText('Tap to play again', W / 2, 350);
+				}
+			}
+
+			function render() {
+				drawBackground();
+				drawPipes();
+				drawBird();
+				drawGround();
+				drawOverlay();
+			}
+
+			function loop(now) {
+				const dt = Math.min((now - lastTime) / 1000 || 0, .04);
+				lastTime = now;
+				update(dt);
+				render();
+				requestAnimationFrame(loop);
+			}
+
+			reset();
+			requestAnimationFrame(loop);
+		})();
+	</script>
+</body>
+</html>

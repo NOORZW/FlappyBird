@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+	<meta name="theme-color" content="#101c34">
+	<title>Wingbeat — Flappy Bird</title>
+	<style>
+		:root { color-scheme: dark; --ink:#f5f7ff; --muted:#a9b5ce; --mint:#a8f0cf; --panel:rgba(22,35,59,.86); }
+		* { box-sizing:border-box; }
+		body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px; overflow-x:hidden; color:var(--ink); font-family:Inter,ui-rounded,"Segoe UI",system-ui,sans-serif; background:radial-gradient(ellipse at 50% 8%,#294463 0,#172843 38%,#10192c 78%); }
+		.game { width:min(100%,480px); }
+		.topbar { display:flex; align-items:center; justify-content:space-between; margin:0 4px 14px; }
+		.brand { display:flex; align-items:center; gap:11px; }
+		.brand-mark { width:42px;height:42px;display:grid;place-items:center;border:1px solid #ffffff25;border-radius:14px;background:linear-gradient(145deg,#b4f4d0,#54b795);box-shadow:0 8px 25px #0a111c70;color:#16352f;font-size:23px; }
+		h1 { margin:0; font-size:19px; line-height:1.15; letter-spacing:.02em; }
+		.subtitle { display:block;margin-top:3px;color:var(--muted);font-size:11px;letter-spacing:.13em;text-transform:uppercase; }
+		.best { color:var(--muted);font-size:12px; }
+		.best strong { display:block;margin-top:3px;color:var(--ink);text-align:right;font-size:17px;font-variant-numeric:tabular-nums; }
+		.frame { position:relative; overflow:hidden; padding:8px; border:1px solid #ffffff24;border-radius:27px;background:linear-gradient(145deg,#ffffff1e,#ffffff07);box-shadow:0 25px 70px #080f1c80, inset 0 1px #ffffff18; }
+		.viewport { position:relative; overflow:hidden;border-radius:20px;background:#a8d9df; }
+		canvas { display:block;width:100%;height:auto;aspect-ratio:420/680;touch-action:manipulation; }
+		.score { position:absolute;z-index:2;top:20px;left:0;right:0;text-align:center;color:#fff;text-shadow:0 2px 9px #13263c90;font-size:48px;font-weight:900;line-height:1;font-variant-numeric:tabular-nums;pointer-events:none; }
+		.sound { position:absolute;z-index:3;top:14px;right:14px;width:40px;height:40px;border:1px solid #ffffff60;border-radius:13px;background:#142b4380;color:#fff;font-size:17px;cursor:pointer;backdrop-filter:blur(8px); }
+		.sound:hover,.sound:focus-visible { background:#173952;outline:2px solid var(--mint);outline-offset:2px; }
+		.overlay { position:absolute;z-index:4;inset:0;display:grid;place-items:center;padding:24px;background:linear-gradient(#14274012,#14274048);text-align:center; }
+		.overlay[hidden] { display:none; }
+		.dialog { width:min(100%,310px);padding:26px 23px 23px;border:1px solid #ffffff4a;border-radius:23px;background:linear-gradient(155deg,#1d3554eF,#14233bee);box-shadow:0 18px 50px #10203770;backdrop-filter:blur(12px); }
+		.eyebrow { margin:0 0 9px;color:var(--mint);font-size:11px;font-weight:800;letter-spacing:.18em;text-transform:uppercase; }
+		.dialog h2 { margin:0;font-size:29px;letter-spacing:-.04em; }
+		.dialog p { margin:10px 0 20px;color:#c2cde0;font-size:14px;line-height:1.5; }
+		.primary { width:100%;min-height:48px;border:0;border-radius:14px;background:linear-gradient(135deg,#b9f4d5,#7de0b4);color:#163b35;font:800 15px inherit;cursor:pointer;box-shadow:0 7px 20px #72ddb533;transition:transform .15s,filter .15s; }
+		.primary:hover { transform:translateY(-2px);filter:brightness(1.05); }
+		.primary:focus-visible { outline:3px solid white;outline-offset:3px; }
+		.help { display:flex;justify-content:center;gap:14px;flex-wrap:wrap;margin:15px 4px 0;color:#b1bfd4;font-size:12px; }
+		.help span { display:inline-flex;align-items:center;gap:6px; }
+		kbd { padding:3px 7px;border:1px solid #ffffff26;border-radius:6px;background:#ffffff0b;color:#e3eaf6;font:inherit;font-size:11px; }
+		@media(max-height:850px) and (min-width:520px) { body{padding-top:12px;padding-bottom:12px}.game{width:min(100%,420px)} }
+		@media(prefers-reduced-motion:reduce) { *,*::before,*::after{scroll-behavior:auto!important;transition:none!important} }
+	</style>
+</head>
+<body>
+	<main class="game" aria-label="Wingbeat game">
+		<header class="topbar">
+			<div class="brand"><div class="brand-mark" aria-hidden="true">↗</div><div><h1>Wingbeat</h1><span class="subtitle">A little flight of fancy</span></div></div>
+			<div class="best">PERSONAL BEST<strong id="best">0</strong></div>
+		</header>
+		<section class="frame" aria-label="Game area">
+			<div class="viewport">
+				<canvas id="game" width="420" height="680" aria-label="Flap through the gaps between pipes. Press Space, click, or tap to fly." role="img"></canvas>
+				<div class="score" id="score" aria-live="polite">0</div>
+				<button class="sound" id="sound" type="button" aria-label="Turn sound off" title="Sound on">♫</button>
+				<div class="overlay" id="overlay">
+					<div class="dialog"><p class="eyebrow" id="eyebrow">Ready when you are</p><h2 id="headline">Take flight</h2><p id="message">Tap, click, or press Space to flap. Find your rhythm and fly through the gaps.</p><button class="primary" id="action" type="button">Start flying</button></div>
+				</div>
+			</div>
+		</section>
+		<div class="help" aria-label="Controls"><span><kbd>SPACE</kbd> flap</span><span><kbd>P</kbd> pause</span><span>Tap anywhere to fly</span></div>
+	</main>
+	<script>
+		(() => {
+			const canvas = document.getElementById('game');
+			const ctx = canvas.getContext('2d');
+			const overlay = document.getElementById('overlay');
+			const scoreEl = document.getElementById('score');
+			const bestEl = document.getElementById('best');
+			const action = document.getElementById('action');
+			const headline = document.getElementById('headline');
+			const message = document.getElementById('message');
+			const eyebrow = document.getElementById('eyebrow');
+			const soundButton = document.getElementById('sound');
+			const W = 420, H = 680, ground = 78;
+			let state = 'ready', score = 0, best = 0, last = 0, time = 0, pipes = [], particles = [];
+			let soundOn = true, audio, bird = { x:112, y:295, vy:0, angle:0 }, clouds = [];
+			try { best = Number(localStorage.getItem('wingbeat-best')) || 0; } catch (_) {}
+			bestEl.textContent = best;
+			for (let i=0;i<6;i++) clouds.push({x:i*105+20,y:60+(i*79)%260,s:.65+(i%3)*.22});
+
+			function resize() {
+				const dpr = Math.min(window.devicePixelRatio || 1, 2);
+				canvas.width = W*dpr; canvas.height = H*dpr;
+				ctx.setTransform(dpr,0,0,dpr,0,0);
+				draw();
+			}
+			window.addEventListener('resize', resize); resize();
+
+			function showOverlay(kind) {
+				overlay.hidden = false;
+				if (kind === 'ready') { eyebrow.textContent='Ready when you are';headline.textContent='Take flight';message.textContent='Tap, click, or press Space to flap. Find your rhythm and fly through the gaps.';action.textContent='Start flying'; }
+				if (kind === 'over') { eyebrow.textContent='Flight complete';headline.textContent='Nice try!';message.textContent=`You flew through ${score} ${score===1?'gap':'gaps'}. Your best is ${best}. Ready for another go?`;action.textContent='Fly again'; }
+				if (kind === 'paused') { eyebrow.textContent='Taking a breather';headline.textContent='Paused';message.textContent='Your bird is waiting. Jump back in whenever you’re ready.';action.textContent='Resume flight'; }
+			}
+			function begin() {
+				if (state === 'paused') { state='running';overlay.hidden=true;last=performance.now();return; }
+				score=0;scoreEl.textContent='0';pipes=[];particles=[];bird={x:112,y:295,vy:0,angle:0};state='running';overlay.hidden=true;flap();last=performance.now();
+			}
+			function flap() {
+				if (state==='ready' || state==='over') { begin(); return; }
+				if (state!=='running') return;
+				bird.vy=-410; sound(620,.055); burst(bird.x-14,bird.y,5,'#fff0ac');
+			}
+			function togglePause() {
+				if (state==='running') { state='paused';showOverlay('paused'); }
+				else if (state==='paused') begin();
+			}
+			function sound(freq,duration) {
+				if (!soundOn) return;
+				try { audio ||= new (window.AudioContext||window.webkitAudioContext)(); if(audio.state==='suspended')audio.resume();const o=audio.createOscillator(),g=audio.createGain();o.type='sine';o.frequency.value=freq;g.gain.setValueAtTime(.055,audio.currentTime);g.gain.exponentialRampToValueAtTime(.001,audio.currentTime+duration);o.connect(g);g.connect(audio.destination);o.start();o.stop(audio.currentTime+duration); } catch (_) {}
+			}
+			function burst(x,y,n,color) { for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,s=35+Math.random()*100;particles.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s,life:.45+Math.random()*.3,color});} }
+			function addPipe() { const gap=164, top=105+Math.random()*285;pipes.push({x:W+24,top,gap,scored:false}); }
+			function endGame() {
+				if(state!=='running')return;state='over';sound(180,.18);burst(bird.x,bird.y,18,'#ffb888');
+				if(score>best){best=score;bestEl.textContent=best;try{localStorage.setItem('wingbeat-best',best);}catch(_){}}
+				showOverlay('over');
+			}
+			function update(dt) {
+				time+=dt;
+				clouds.forEach(c=>{c.x-=dt*9*c.s;if(c.x<-90)c.x=W+60;});
+				particles=particles.filter(p=>p.life>0);particles.forEach(p=>{p.life-=dt;p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=180*dt;});
+				if(state!=='running')return;
+				bird.vy+=1450*dt;bird.y+=bird.vy*dt;bird.angle=Math.min(.95,Math.max(-.55,bird.vy/600));
+				if(!pipes.length || pipes[pipes.length-1].x < W-225)addPipe();
+				pipes.forEach(p=>{p.x-=190*dt;if(!p.scored&&p.x+68<bird.x){p.scored=true;score++;scoreEl.textContent=score;sound(880,.09);burst(bird.x,bird.y,9,'#b7f4d4');}});
+				pipes=pipes.filter(p=>p.x>-90);
+				const bx=bird.x, by=bird.y;
+				if(by+15>H-ground || by-15<0)endGame();
+				for(const p of pipes){if(bx+17>p.x&&bx-17<p.x+68&&(by-13<p.top||by+13>p.top+p.gap))endGame();}
+			}
+			function roundedRect(x,y,w,h,r) { ctx.beginPath();ctx.roundRect(x,y,w,h,r); }
+			function drawCloud(x,y,s) { ctx.save();ctx.translate(x,y);ctx.scale(s,s);ctx.fillStyle='#ffffff88';ctx.beginPath();ctx.arc(0,8,19,0,Math.PI*2);ctx.arc(22,0,25,0,Math.PI*2);ctx.arc(49,10,17,0,Math.PI*2);ctx.rect(-2,8,53,18);ctx.fill();ctx.restore(); }
+			function draw() {
+				const sky=ctx.createLinearGradient(0,0,0,H);sky.addColorStop(0,'#83c8d3');sky.addColorStop(.68,'#b7e5d7');sky.addColorStop(1,'#e1edbd');ctx.fillStyle=sky;ctx.fillRect(0,0,W,H);
+				ctx.fillStyle='#fff7c0';ctx.globalAlpha=.6;ctx.beginPath();ctx.arc(326,112,42,0,Math.PI*2);ctx.fill();ctx.globalAlpha=1;
+				clouds.forEach(c=>drawCloud(c.x,c.y,c.s));
+				ctx.fillStyle='#92cbb5';ctx.beginPath();ctx.moveTo(0,430);for(let x=0;x<=W;x+=60)ctx.lineTo(x,390+Math.sin(x*.021+1)*32);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+				ctx.fillStyle='#72b69f';ctx.beginPath();ctx.moveTo(0,500);for(let x=0;x<=W;x+=48)ctx.lineTo(x,458+Math.sin(x*.025+2)*25);ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+				pipes.forEach(p=>{
+					const grad=ctx.createLinearGradient(p.x,0,p.x+68,0);grad.addColorStop(0,'#338b76');grad.addColorStop(.22,'#67c29b');grad.addColorStop(.58,'#47a984');grad.addColorStop(1,'#277963');
+					ctx.fillStyle=grad;ctx.strokeStyle='#236d62';ctx.lineWidth=3;
+					roundedRect(p.x,0,68,p.top,10);ctx.fill();ctx.stroke();roundedRect(p.x-6,p.top-27,80,28,8);ctx.fill();ctx.stroke();
+					const lower=p.top+p.gap;roundedRect(p.x,lower,68,H-lower-ground,10);ctx.fill();ctx.stroke();roundedRect(p.x-6,lower,80,28,8);ctx.fill();ctx.stroke();
+					ctx.fillStyle='#ffffff2c';ctx.fillRect(p.x+13,0,6,p.top-30);ctx.fillRect(p.x+13,lower+30,6,H-lower-ground-30);
+				});
+				ctx.fillStyle='#dfca88';ctx.fillRect(0,H-ground,W,ground);ctx.fillStyle='#faf0c3';ctx.fillRect(0,H-ground,W,12);
+				ctx.fillStyle='#c2a96c';const offset=(time*48)%32;for(let x=-offset;x<W;x+=32){ctx.beginPath();ctx.moveTo(x,H-ground+12);ctx.lineTo(x+13,H-ground+12);ctx.lineTo(x+5,H-ground+23);ctx.lineTo(x-8,H-ground+23);ctx.fill();}
+				particles.forEach(p=>{ctx.globalAlpha=Math.max(0,p.life*2);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,3,0,Math.PI*2);ctx.fill();});ctx.globalAlpha=1;
+				ctx.save();ctx.translate(bird.x,bird.y+(state==='ready'?Math.sin(time*3)*7:0));ctx.rotate(bird.angle);
+				ctx.fillStyle='#ffffff35';ctx.beginPath();ctx.ellipse(-4,5,21,15,0,0,Math.PI*2);ctx.fill();
+				ctx.fillStyle='#f6b94f';ctx.strokeStyle='#9c673d';ctx.lineWidth=2;ctx.beginPath();ctx.ellipse(0,0,19,15,0,0,Math.PI*2);ctx.fill();ctx.stroke();
+				ctx.fillStyle='#e99a42';ctx.beginPath();ctx.ellipse(-7,6,10,7,Math.sin(time*18)*.4,0,Math.PI*2);ctx.fill();
+				ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(9,-5,6,0,Math.PI*2);ctx.fill();ctx.fillStyle='#273447';ctx.beginPath();ctx.arc(11,-5,2.4,0,Math.PI*2);ctx.fill();
+				ctx.fillStyle='#ef8055';ctx.beginPath();ctx.moveTo(16,1);ctx.lineTo(28,5);ctx.lineTo(16,9);ctx.closePath();ctx.fill();ctx.restore();
+			}
+			function loop(now) { const dt=Math.min((now-last)/1000||0,0.035);last=now;update(dt);draw();requestAnimationFrame(loop); }
+			action.addEventListener('click',begin);
+			canvas.addEventListener('pointerdown',e=>{e.preventDefault();flap();});
+			window.addEventListener('keydown',e=>{
+				if(e.code==='Space'||e.code==='ArrowUp'){e.preventDefault();if(!e.repeat)flap();}
+				if(e.code==='KeyP'&&!e.repeat)togglePause();
+				if(e.code==='Enter'&&(state==='ready'||state==='over'||state==='paused'))begin();
+			});
+			soundButton.addEventListener('click',()=>{soundOn=!soundOn;soundButton.textContent=soundOn?'♫':'♪';soundButton.title=soundOn?'Sound on':'Sound off';soundButton.setAttribute('aria-label',soundOn?'Turn sound off':'Turn sound on');if(soundOn)sound(620,.06);});
+			showOverlay('ready');requestAnimationFrame(loop);
+		})();
+	</script>
+</body>
+</html>
